@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import NamedTuple, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 from bilibili_api import BilibiliAPIError, get_bangumi_info, get_video_info
@@ -112,6 +112,22 @@ QUALITY_CHOICES = {
 
 class UserInputError(ValueError):
     pass
+
+
+class DownloadOutputs(NamedTuple):
+    """The independently selectable files produced by one download plan."""
+
+    combined_video: bool
+    audio_mode: str
+    video_only: bool
+
+    @property
+    def has_any(self) -> bool:
+        return (
+            self.combined_video
+            or self.audio_mode != "none"
+            or self.video_only
+        )
 
 
 def normalize_bilibili_url(value: str) -> str:
@@ -502,19 +518,27 @@ def choose_quality() -> str:
         print("请输入菜单中的数字。")
 
 
-def prompt_yes_no(message: str) -> bool:
+def prompt_yes_no(
+    message: str,
+    *,
+    default: bool = False,
+    prompt=input,
+    write=print,
+) -> bool:
     while True:
-        answer = input(message).strip().lower()
-        if answer in {"", "n", "no"}:
+        answer = prompt(message).strip().lower()
+        if answer == "":
+            return default
+        if answer in {"n", "no"}:
             return False
         if answer in {"y", "yes"}:
             return True
-        print("请输入 Y，或直接回车选择否。")
+        write("请输入 Y 或 N；也可以直接回车使用默认选择。")
 
 
 def choose_audio_mode(*, prompt=input, write=print) -> str:
-    write("\n是否额外保留独立音频？")
-    write("  0. 不保留（默认）")
+    write("\n是否下载独立音频文件（只有声音、没有画面）？")
+    write("  0. 不下载（默认）")
     write("  1. {}".format(AUDIO_MODE_LABELS["mp3"]))
     write("  2. {}".format(AUDIO_MODE_LABELS["flac"]))
     write(
@@ -528,7 +552,38 @@ def choose_audio_mode(*, prompt=input, write=print) -> str:
             return choices[answer]
         if answer in {"mp3", "flac"}:
             return answer
-        write("请输入 0、1、2，或直接回车选择不保留。")
+        write("请输入 0、1、2，或直接回车选择不下载。")
+
+
+def choose_output_plan(*, prompt=input, write=print) -> DownloadOutputs:
+    """Choose one or more real output types and reject an empty plan."""
+    while True:
+        write("\n文件输出选择（可以只选一种，也可以自由组合）：")
+        combined_video = prompt_yes_no(
+            "是否下载完整视频（有画面、有声音）？"
+            "直接回车下载，输入 N 不下载：",
+            default=True,
+            prompt=prompt,
+            write=write,
+        )
+        audio_mode = choose_audio_mode(prompt=prompt, write=write)
+        video_only = prompt_yes_no(
+            "\n是否下载无声音视频（只有画面）？"
+            "输入 Y 下载，直接回车不下载：",
+            prompt=prompt,
+            write=write,
+        )
+        outputs = DownloadOutputs(
+            combined_video,
+            audio_mode,
+            video_only,
+        )
+        if outputs.has_any:
+            return outputs
+        write(
+            "\n[选择无效] 完整视频、独立音频和无声音视频不能全部不选，"
+            "请至少选择一种输出。"
+        )
 
 
 def selection_summary(selection: PartSelection) -> str:
@@ -567,13 +622,20 @@ def selection_summary(selection: PartSelection) -> str:
 def confirm_download_plan(
     selection: PartSelection,
     browser_label: str,
-    quality_key: str,
-    audio_mode: str,
-    keep_video_only: bool,
+    quality_key: Optional[str],
+    outputs: DownloadOutputs,
     *,
     prompt=input,
     write=print,
 ) -> str:
+    if outputs.audio_mode not in AUDIO_MODE_LABELS:
+        raise ValueError("unsupported audio mode: {}".format(outputs.audio_mode))
+    if not outputs.has_any:
+        raise ValueError("download plan must contain at least one output")
+    needs_video_quality = outputs.combined_video or outputs.video_only
+    if needs_video_quality and quality_key not in QUALITY_CHOICES:
+        raise ValueError("video output requires a quality choice")
+
     write("\n" + "=" * 58)
     write("请确认下载计划")
     write("  视频：{}".format(selection.catalog.title))
@@ -585,13 +647,35 @@ def confirm_download_plan(
         )
     )
     write("  登录：{}".format(browser_label))
-    write("  画质：{}".format(QUALITY_CHOICES[quality_key]["label"]))
-    write("  独立音频：{}".format(AUDIO_MODE_LABELS[audio_mode]))
-    write("  无音频视频：{}".format("额外保留" if keep_video_only else "不保留"))
+    write(
+        "  画质：{}".format(
+            QUALITY_CHOICES[quality_key]["label"]
+            if needs_video_quality
+            else "不适用（仅下载音频）"
+        )
+    )
+    write(
+        "  完整视频：{}".format(
+            "下载" if outputs.combined_video else "不下载"
+        )
+    )
+    write("  无画面音频：{}".format(AUDIO_MODE_LABELS[outputs.audio_mode]))
+    write(
+        "  无声音视频：{}".format(
+            "下载" if outputs.video_only else "不下载"
+        )
+    )
     write("  保存位置：{}".format(OUTPUT_DIR))
     write("=" * 58)
-    if audio_mode != "none" or keep_video_only:
-        write("附加文件会增加下载流量、磁盘占用和处理时间。")
+    selected_output_count = sum(
+        (
+            int(outputs.combined_video),
+            int(outputs.audio_mode != "none"),
+            int(outputs.video_only),
+        )
+    )
+    if selected_output_count > 1:
+        write("多种输出会增加下载流量、磁盘占用和处理时间。")
     write("直接回车开始；输入 R 重新选择；输入 Q 取消并退出。")
 
     while True:
@@ -819,33 +903,30 @@ def main() -> int:
                     choose_another_url = True
                     break
 
-                quality_key = choose_quality()
-                while quality_key == "6":
-                    print("\n正在读取当前账号可用画质……\n")
-                    result = subprocess.run(
-                        build_list_formats_command(
-                            catalog.current_url,
-                            browser_id,
-                            ffmpeg_path,
-                        ),
-                        check=False,
-                    )
-                    if result.returncode != 0:
-                        show_failure_hint(browser_id)
-                    input("\n查看完成，按回车返回画质菜单：")
+                outputs = choose_output_plan()
+                quality_key = None
+                if outputs.combined_video or outputs.video_only:
                     quality_key = choose_quality()
+                    while quality_key == "6":
+                        print("\n正在读取当前账号可用画质……\n")
+                        result = subprocess.run(
+                            build_list_formats_command(
+                                catalog.current_url,
+                                browser_id,
+                                ffmpeg_path,
+                            ),
+                            check=False,
+                        )
+                        if result.returncode != 0:
+                            show_failure_hint(browser_id)
+                        input("\n查看完成，按回车返回画质菜单：")
+                        quality_key = choose_quality()
 
-                audio_mode = choose_audio_mode()
-                keep_video_only = prompt_yes_no(
-                    "\n是否额外保留无音频的视频文件？输入 Y 保留，"
-                    "直接回车不保留："
-                )
                 decision = confirm_download_plan(
                     selection,
                     str(browser["app"]) if browser else "匿名",
                     quality_key,
-                    audio_mode,
-                    keep_video_only,
+                    outputs,
                 )
                 if decision == "redo":
                     print("\n好的，重新选择本视频的下载方案。")
@@ -859,6 +940,16 @@ def main() -> int:
                 continue
             break
 
+        task_total = sum(
+            (
+                int(outputs.combined_video),
+                int(outputs.audio_mode != "none"),
+                int(outputs.video_only),
+            )
+        )
+        if task_total <= 0:
+            raise RuntimeError("下载计划没有选择任何输出")
+
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         selected_playlist_args = playlist_arguments(selection)
         print("\n已确认，开始执行下载计划。")
@@ -866,35 +957,44 @@ def main() -> int:
             "下载过程中按 Control+C 可暂停；暂停后会询问继续还是退出。"
         )
 
-        task_total = 1 + int(audio_mode != "none") + int(keep_video_only)
-        task_index = 1
-        print("\n[{}/{}] 正在处理：正常视频\n".format(
-            task_index,
-            task_total,
-        ))
-        result = run_process_with_pause(
-            build_download_command(
-                selection.url,
-                browser_id,
-                quality_key,
-                selected_playlist_args,
-                ffmpeg_path,
-            )
-        )
-        if result.cancelled:
-            print(
-                "\n已按你的选择退出。未完成的 .part 文件会保留，"
-                "下次使用相同链接和选项可继续下载。"
-            )
-            return 0
-        if result.returncode != 0:
-            print("\n正常视频下载失败。")
-            show_failure_hint(browser_id)
-            return result.returncode
-
+        task_index = 0
         failures = []
-        if audio_mode != "none":
+
+        if outputs.combined_video:
             task_index += 1
+            assert quality_key is not None
+            print("\n[{}/{}] 正在处理：完整视频\n".format(
+                task_index,
+                task_total,
+            ))
+            result = run_process_with_pause(
+                build_download_command(
+                    selection.url,
+                    browser_id,
+                    quality_key,
+                    selected_playlist_args,
+                    ffmpeg_path,
+                )
+            )
+            if result.cancelled:
+                print(
+                    "\n已按你的选择退出。未完成的 .part 文件会保留，"
+                    "下次使用相同链接和选项可继续下载。"
+                )
+                return 0
+            if result.returncode != 0:
+                failures.append("完整视频")
+                if task_total > 1:
+                    print(
+                        "\n完整视频下载失败；"
+                        "将继续处理其他已经选择的输出。"
+                    )
+                else:
+                    print("\n完整视频下载失败。")
+
+        if outputs.audio_mode != "none":
+            task_index += 1
+            audio_mode = outputs.audio_mode
             cache_dir, manifest_path = audio_cache_paths(
                 selection,
                 audio_mode,
@@ -961,9 +1061,10 @@ def main() -> int:
                     )
                     failures.append("独立 MP3")
 
-        if keep_video_only:
+        if outputs.video_only:
             task_index += 1
-            print("\n[{}/{}] 正在处理：无音频视频\n".format(
+            assert quality_key is not None
+            print("\n[{}/{}] 正在处理：无声音视频\n".format(
                 task_index,
                 task_total,
             ))
@@ -983,12 +1084,12 @@ def main() -> int:
                 )
                 return 0
             if video_only_result.returncode != 0:
-                failures.append("无音频视频")
-                print("\n无音频视频下载失败，正常视频不受影响。")
+                failures.append("无声音视频")
+                print("\n无声音视频下载失败，其他已完成文件不受影响。")
 
         if failures:
             print(
-                "\n正常视频已完成，但以下附加文件失败：{}".format(
+                "\n以下所选输出未能全部完成：{}".format(
                     "、".join(failures)
                 )
             )

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import json
+import io
 import tempfile
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -263,6 +264,33 @@ class PlanConfirmationTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_output_plan_defaults_to_combined_video(self):
+        answers = iter(("", "", ""))
+        outputs = app.choose_output_plan(
+            prompt=lambda _: next(answers),
+            write=lambda _: None,
+        )
+        self.assertEqual(
+            outputs,
+            app.DownloadOutputs(True, "none", False),
+        )
+
+    def test_output_plan_rejects_all_off_then_accepts_audio_only(self):
+        answers = iter(("n", "0", "n", "n", "1", "n"))
+        messages = []
+        outputs = app.choose_output_plan(
+            prompt=lambda _: next(answers),
+            write=messages.append,
+        )
+        self.assertEqual(
+            outputs,
+            app.DownloadOutputs(False, "mp3", False),
+        )
+        self.assertEqual(
+            sum("[选择无效]" in message for message in messages),
+            1,
+        )
+
     def test_selection_summary_compresses_custom_part_ranges(self):
         self.assertEqual(
             app.selection_summary(self.selection),
@@ -277,8 +305,7 @@ class PlanConfirmationTests(unittest.TestCase):
                     self.selection,
                     "Google Chrome",
                     "3",
-                    "flac",
-                    True,
+                    app.DownloadOutputs(True, "flac", True),
                     prompt=lambda _: answer,
                     write=messages.append,
                 )
@@ -288,7 +315,43 @@ class PlanConfirmationTests(unittest.TestCase):
                 self.assertIn("P1,3-4", rendered)
                 self.assertIn("1080P", rendered)
                 self.assertIn("FLAC", rendered)
-                self.assertIn("无音频视频：额外保留", rendered)
+                self.assertIn("完整视频：下载", rendered)
+                self.assertIn("无声音视频：下载", rendered)
+
+    def test_audio_only_confirmation_skips_video_quality(self):
+        messages = []
+        action = app.confirm_download_plan(
+            self.selection,
+            "匿名",
+            None,
+            app.DownloadOutputs(False, "mp3", False),
+            prompt=lambda _: "Q",
+            write=messages.append,
+        )
+        rendered = "\n".join(messages)
+        self.assertEqual(action, "quit")
+        self.assertIn("画质：不适用（仅下载音频）", rendered)
+        self.assertIn("完整视频：不下载", rendered)
+        self.assertIn("无画面音频：MP3", rendered)
+        self.assertIn("无声音视频：不下载", rendered)
+
+    def test_confirmation_rejects_empty_or_unqualified_video_plan(self):
+        invalid = (
+            (None, app.DownloadOutputs(False, "none", False)),
+            (None, app.DownloadOutputs(False, "none", True)),
+            (None, app.DownloadOutputs(False, "wav", False)),
+        )
+        for quality_key, outputs in invalid:
+            with self.subTest(outputs=outputs):
+                with self.assertRaises(ValueError):
+                    app.confirm_download_plan(
+                        self.selection,
+                        "匿名",
+                        quality_key,
+                        outputs,
+                        prompt=lambda _: "Q",
+                        write=lambda _: None,
+                    )
 
 
 class MainFlowTests(unittest.TestCase):
@@ -310,9 +373,9 @@ class MainFlowTests(unittest.TestCase):
         self,
         stack,
         *,
-        audio_mode,
-        keep_video_only,
+        outputs,
         decision,
+        quality_key="3",
     ):
         stack.enter_context(
             mock.patch.object(
@@ -345,21 +408,18 @@ class MainFlowTests(unittest.TestCase):
                 return_value=self.selection,
             )
         )
-        stack.enter_context(
-            mock.patch.object(app, "choose_quality", return_value="3")
-        )
-        stack.enter_context(
+        choose_quality = stack.enter_context(
             mock.patch.object(
                 app,
-                "choose_audio_mode",
-                return_value=audio_mode,
+                "choose_quality",
+                return_value=quality_key,
             )
         )
         stack.enter_context(
             mock.patch.object(
                 app,
-                "prompt_yes_no",
-                return_value=keep_video_only,
+                "choose_output_plan",
+                return_value=outputs,
             )
         )
         stack.enter_context(
@@ -369,13 +429,13 @@ class MainFlowTests(unittest.TestCase):
                 return_value=decision,
             )
         )
+        return choose_quality
 
     def test_quit_at_confirmation_starts_no_download_or_open(self):
         with ExitStack() as stack:
             self._patch_plan_inputs(
                 stack,
-                audio_mode="mp3",
-                keep_video_only=True,
+                outputs=app.DownloadOutputs(True, "mp3", True),
                 decision="quit",
             )
             run_process = stack.enter_context(
@@ -406,8 +466,7 @@ class MainFlowTests(unittest.TestCase):
             )
             self._patch_plan_inputs(
                 stack,
-                audio_mode="mp3",
-                keep_video_only=True,
+                outputs=app.DownloadOutputs(True, "mp3", True),
                 decision="start",
             )
             stack.enter_context(
@@ -455,6 +514,263 @@ class MainFlowTests(unittest.TestCase):
             ["/usr/bin/open", str(output_path)],
             check=False,
         )
+
+    def test_combined_failure_still_runs_selected_video_only_output(self):
+        commands = []
+        results = iter((ProcessResult(4, False), ProcessResult(0, False)))
+
+        def fake_run(command):
+            commands.append(command)
+            return next(results)
+
+        with tempfile.TemporaryDirectory() as output_dir, ExitStack() as stack:
+            output_path = Path(output_dir)
+            stack.enter_context(
+                mock.patch.object(app, "OUTPUT_DIR", output_path)
+            )
+            self._patch_plan_inputs(
+                stack,
+                outputs=app.DownloadOutputs(True, "none", True),
+                decision="start",
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "run_process_with_pause",
+                    side_effect=fake_run,
+                )
+            )
+            stack.enter_context(mock.patch.object(app.subprocess, "run"))
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(app.main(), 1)
+
+        self.assertEqual(len(commands), 2)
+        self.assertIn("--merge-output-format", commands[0])
+        self.assertIn(
+            ".video-only-",
+            commands[1][commands[1].index("--output") + 1],
+        )
+        rendered = stdout.getvalue()
+        self.assertIn("[1/2] 正在处理：完整视频", rendered)
+        self.assertIn("[2/2] 正在处理：无声音视频", rendered)
+        self.assertIn("完整视频下载失败", rendered)
+        self.assertIn("以下所选输出未能全部完成：完整视频", rendered)
+
+    def test_audio_only_skips_quality_and_runs_one_numbered_task(self):
+        commands = []
+
+        def fake_run(command):
+            commands.append(command)
+            return ProcessResult(0, False)
+
+        with tempfile.TemporaryDirectory() as output_dir, ExitStack() as stack:
+            output_path = Path(output_dir)
+            cache_dir = output_path / "cache"
+            manifest_path = cache_dir / "audio-sources.jsonl"
+            stack.enter_context(
+                mock.patch.object(app, "OUTPUT_DIR", output_path)
+            )
+            choose_quality = self._patch_plan_inputs(
+                stack,
+                outputs=app.DownloadOutputs(False, "mp3", False),
+                decision="start",
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "run_process_with_pause",
+                    side_effect=fake_run,
+                )
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "audio_cache_paths",
+                    return_value=(cache_dir, manifest_path),
+                )
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "read_audio_manifest",
+                    return_value=[object(), object(), object()],
+                )
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "convert_audio_sources",
+                    return_value=(False, []),
+                )
+            )
+            subprocess_run = stack.enter_context(
+                mock.patch.object(app.subprocess, "run")
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(app.main(), 0)
+
+        choose_quality.assert_not_called()
+        self.assertEqual(len(commands), 1)
+        self.assertIn("--print-to-file", commands[0])
+        self.assertNotIn("--merge-output-format", commands[0])
+        self.assertIn("[1/1] 正在取得独立 MP3", stdout.getvalue())
+        self.assertNotIn("正在处理：完整视频", stdout.getvalue())
+        subprocess_run.assert_called_once_with(
+            ["/usr/bin/open", str(output_path)],
+            check=False,
+        )
+
+    def test_video_only_runs_without_combined_or_audio_task(self):
+        commands = []
+
+        def fake_run(command):
+            commands.append(command)
+            return ProcessResult(0, False)
+
+        with tempfile.TemporaryDirectory() as output_dir, ExitStack() as stack:
+            output_path = Path(output_dir)
+            stack.enter_context(
+                mock.patch.object(app, "OUTPUT_DIR", output_path)
+            )
+            choose_quality = self._patch_plan_inputs(
+                stack,
+                outputs=app.DownloadOutputs(False, "none", True),
+                decision="start",
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "run_process_with_pause",
+                    side_effect=fake_run,
+                )
+            )
+            subprocess_run = stack.enter_context(
+                mock.patch.object(app.subprocess, "run")
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(app.main(), 0)
+
+        choose_quality.assert_called_once_with()
+        self.assertEqual(len(commands), 1)
+        self.assertIn(
+            ".video-only-",
+            commands[0][commands[0].index("--output") + 1],
+        )
+        self.assertNotIn("--merge-output-format", commands[0])
+        self.assertIn("[1/1] 正在处理：无声音视频", stdout.getvalue())
+        self.assertNotIn("正在处理：完整视频", stdout.getvalue())
+        subprocess_run.assert_called_once_with(
+            ["/usr/bin/open", str(output_path)],
+            check=False,
+        )
+
+    def test_audio_and_video_only_share_parts_without_combined_video(self):
+        commands = []
+
+        def fake_run(command):
+            commands.append(command)
+            return ProcessResult(0, False)
+
+        with tempfile.TemporaryDirectory() as output_dir, ExitStack() as stack:
+            output_path = Path(output_dir)
+            cache_dir = output_path / "cache"
+            manifest_path = cache_dir / "audio-sources.jsonl"
+            stack.enter_context(
+                mock.patch.object(app, "OUTPUT_DIR", output_path)
+            )
+            self._patch_plan_inputs(
+                stack,
+                outputs=app.DownloadOutputs(False, "mp3", True),
+                decision="start",
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "run_process_with_pause",
+                    side_effect=fake_run,
+                )
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "audio_cache_paths",
+                    return_value=(cache_dir, manifest_path),
+                )
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "read_audio_manifest",
+                    return_value=[object(), object(), object()],
+                )
+            )
+            stack.enter_context(
+                mock.patch.object(
+                    app,
+                    "convert_audio_sources",
+                    return_value=(False, []),
+                )
+            )
+            stack.enter_context(mock.patch.object(app.subprocess, "run"))
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(app.main(), 0)
+
+        self.assertEqual(len(commands), 2)
+        self.assertIn("--print-to-file", commands[0])
+        self.assertIn(
+            ".video-only-",
+            commands[1][commands[1].index("--output") + 1],
+        )
+        playlist_values = [
+            command[command.index("--playlist-items") + 1]
+            for command in commands
+        ]
+        self.assertEqual(playlist_values, ["1,3,4", "1,3,4"])
+        rendered = stdout.getvalue()
+        self.assertIn("[1/2] 正在取得独立 MP3", rendered)
+        self.assertIn("[2/2] 正在处理：无声音视频", rendered)
+        self.assertNotIn("正在处理：完整视频", rendered)
+
+    def test_empty_plan_defense_runs_nothing_and_creates_no_output_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir, ExitStack() as stack:
+            output_path = Path(temp_dir) / "must-not-exist"
+            stack.enter_context(
+                mock.patch.object(app, "OUTPUT_DIR", output_path)
+            )
+            choose_quality = self._patch_plan_inputs(
+                stack,
+                outputs=app.DownloadOutputs(False, "none", False),
+                decision="start",
+            )
+            run_process = stack.enter_context(
+                mock.patch.object(app, "run_process_with_pause")
+            )
+            combined_builder = stack.enter_context(
+                mock.patch.object(app, "build_download_command")
+            )
+            audio_builder = stack.enter_context(
+                mock.patch.object(app, "build_audio_source_command")
+            )
+            video_builder = stack.enter_context(
+                mock.patch.object(app, "build_video_only_track_command")
+            )
+            subprocess_run = stack.enter_context(
+                mock.patch.object(app.subprocess, "run")
+            )
+
+            self.assertEqual(app.main(), 1)
+
+        choose_quality.assert_not_called()
+        run_process.assert_not_called()
+        combined_builder.assert_not_called()
+        audio_builder.assert_not_called()
+        video_builder.assert_not_called()
+        subprocess_run.assert_not_called()
+        self.assertFalse(output_path.exists())
 
 
 class AudioSafetyTests(unittest.TestCase):
