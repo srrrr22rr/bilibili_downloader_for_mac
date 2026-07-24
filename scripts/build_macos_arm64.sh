@@ -12,7 +12,8 @@ readonly FFMPEG_BUNDLE_PATH="$BUILD_ROOT/ffmpeg"
 readonly APP_PATH="$PACKAGE_ROOT/dist/b站downloader.app"
 readonly VERSION="${VERSION:-2.0.0}"
 readonly BUILD_NUMBER="${BUILD_NUMBER:-20000}"
-readonly ZIP_PATH="$PACKAGE_ROOT/dist/b站downloader-${VERSION}-macos-arm64.zip"
+readonly ZIP_PATH="$PACKAGE_ROOT/dist/bilibili-downloader-${VERSION}-macos-arm64.zip"
+readonly LEGACY_ZIP_PATH="$PACKAGE_ROOT/dist/b站downloader-${VERSION}-macos-arm64.zip"
 readonly BOOTSTRAP_PYTHON="${BOOTSTRAP_PYTHON:-/usr/bin/python3}"
 
 mkdir -p "$BUILD_ROOT" "$PACKAGE_ROOT/dist"
@@ -137,7 +138,11 @@ chmod 755 \
     "$APP_PATH"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
-/bin/rm -f "$ZIP_PATH" "$ZIP_PATH.sha256"
+/bin/rm -f \
+    "$ZIP_PATH" \
+    "$ZIP_PATH.sha256" \
+    "$LEGACY_ZIP_PATH" \
+    "$LEGACY_ZIP_PATH.sha256"
 /usr/bin/ditto \
     -c -k --keepParent --sequesterRsrc \
     "$APP_PATH" \
