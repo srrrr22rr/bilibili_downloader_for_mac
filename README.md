@@ -44,16 +44,16 @@ Mac 芯片是 Apple M 系列（arm64），并且系统是 macOS 14 以上，就�
 |---|---|
 | 处理器 | Apple Silicon arm64；不支持 Intel Mac，后续芯片以实际兼容性为准 |
 | 最低系统 | macOS 14 Sonoma |
-| App | b站downloader 2.0.0 |
+| App | b站downloader 1.0.0 |
 | Python 运行时 | 3.9.6 arm64 |
 | yt-dlp | 2026.07.04 官方 macOS standalone binary |
 | FFmpeg | 7.1 arm64，由 imageio-ffmpeg 0.6.0 提供 |
-| 发布状态 | ad-hoc 签名的预发布版本，尚未 Apple 公证 |
+| 发布状态 | 首个公开发布版；ad-hoc 签名，尚未 Apple 公证 |
 
 当前 ZIP：
 
 ```text
-bilibili-downloader-2.0.0-macos-arm64.zip
+bilibili-downloader-1.0.0-macos-arm64.zip
 ```
 
 下载页同时提供同名 `.sha256` 文件，GitHub 也会显示 Release asset digest。
@@ -63,7 +63,7 @@ bilibili-downloader-2.0.0-macos-arm64.zip
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c bilibili-downloader-2.0.0-macos-arm64.zip.sha256
+shasum -a 256 -c bilibili-downloader-1.0.0-macos-arm64.zip.sha256
 ```
 
 ### 3. 运行架构
@@ -342,8 +342,8 @@ PYTHONPATH=src .venv-build/bin/python -m unittest discover -s tests -v
 
 ```text
 dist/b站downloader.app
-dist/bilibili-downloader-2.0.0-macos-arm64.zip
-dist/bilibili-downloader-2.0.0-macos-arm64.zip.sha256
+dist/bilibili-downloader-1.0.0-macos-arm64.zip
+dist/bilibili-downloader-1.0.0-macos-arm64.zip.sha256
 ```
 
 构建脚本会：
@@ -360,8 +360,8 @@ dist/bilibili-downloader-2.0.0-macos-arm64.zip.sha256
 
 | 变量 | 用途 |
 |---|---|
-| `VERSION` | App/ZIP 版本，默认 `2.0.0` |
-| `BUILD_NUMBER` | `CFBundleVersion`，默认 `20000` |
+| `VERSION` | App/ZIP 版本，默认 `1.0.0` |
+| `BUILD_NUMBER` | `CFBundleVersion`，默认 `10000` |
 | `BOOTSTRAP_PYTHON` | 构建虚拟环境所用 Python |
 | `CODESIGN_IDENTITY` | 外层 bundle 签名身份；默认 `-`（ad-hoc） |
 
@@ -454,7 +454,7 @@ macOS Release 混用。
 请只下载自己创作、获得授权、允许离线保存或法律明确允许的内容，并遵守平台
 条款、版权规则与当地法律。项目不对未经授权的下载、传播或商业使用负责。
 
-[release]: https://github.com/srrrr22rr/b-_mac-/releases/tag/v2.0.0-macos-arm64
+[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.0.0
 [apple-open]: https://support.apple.com/guide/mac-help/mh40616/mac
 [developer-id]: https://developer.apple.com/developer-id/
 [notarization]: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
