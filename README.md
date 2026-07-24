@@ -4,7 +4,7 @@
 双击后会打开 Terminal 进行中文交互。发布包内置运行环境，普通用户不用安装
 Homebrew、Python、yt-dlp 或 FFmpeg。
 
-## 第一部分：大白话安装（400 字以内）
+## 第一部分：大白话安装
 
 Mac 芯片是 Apple M 系列（arm64），并且系统是 macOS 14 以上，就能安装。
 
