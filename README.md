@@ -9,8 +9,19 @@ Mac 芯片是 Apple M 系列（arm64），并且系统是 macOS 14 以上，就�
 
 1. 到[下载页][release]下载 arm64 ZIP 和同名 `.sha256`。
 2. 双击 ZIP，得到 `b站downloader.app`；放桌面或拖进“应用程序”都行。
-3. 首次双击若提示无法验证开发者，去“系统设置 → 隐私与安全性”，找到本应用
-   并点“仍要打开”。
+3. 首次双击如果提示“Apple 无法验证……”，按下面做（确认 App 是从本仓库 Release 下载的再继续）：
+
+   **① 先点“完成”，不要点“移到废纸篓”。**
+
+   ![首次打开时 macOS 提示无法验证 b站 downloader](docs/images/macos-gatekeeper-01-warning.png)
+
+   **② 打开“系统设置 → 隐私与安全性”，往下翻，找到“已阻止‘b站 downloader’以保护 Mac”，点右边的“仍要打开”。**
+
+   ![在系统设置的隐私与安全性页面点击仍要打开](docs/images/macos-gatekeeper-02-privacy-security.png)
+
+   **③ 再次弹出确认框时，点“仍要打开”。这一步通常只需操作一次。**
+
+   ![再次确认仍要打开 b站 downloader](docs/images/macos-gatekeeper-03-confirm-open.png)
 4. App 会打开命令行（**就是那个黑色框框**）。按中文菜单选登录方式，粘贴 BV/AV、链接或整段分享
    文字，再选分p、画质、音频和无音频视频（想下什么下什么咯下载过程中会让你选择）。
 6. 下载过程中让你输密码你就输入mac开机密码
@@ -37,7 +48,7 @@ ps：登录不能绕过会员限制。
 
 - 新的 Apple Silicon Mac 解压后即可运行，无 Homebrew 依赖。
 - 不要求用户复制 Cookie、SESSDATA 或密码。
-- 下载前明确显示登录来源、分P、画质和附加文件计划。
+- 下载前明确显示登录来源、分P、画质和全部输出文件计划。
 - 严格区分有损 MP3 与平台实际返回的 FLAC，拒绝“假无损”。
 - App bundle 保持只读，下载和缓存都写入用户目录。
 - 构建、依赖版本、许可证和发布验证可审计。
@@ -48,16 +59,16 @@ ps：登录不能绕过会员限制。
 |---|---|
 | 处理器 | Apple Silicon arm64；不支持 Intel Mac，后续芯片以实际兼容性为准 |
 | 最低系统 | macOS 14 Sonoma |
-| App | b站downloader 1.0.1 |
+| App | b站downloader 1.1.0 |
 | Python 运行时 | 3.9.6 arm64 |
 | yt-dlp | 2026.07.04 官方 macOS standalone binary |
 | FFmpeg | 7.1 arm64，由 imageio-ffmpeg 0.6.0 提供 |
-| 发布状态 | v1.0.1 兼容性修复版；v1.0.0 为首个公开发布版；ad-hoc 签名，尚未 Apple 公证 |
+| 发布状态 | v1.1.0 输出模式与安装指引更新；v1.0.1 为番剧兼容性修复；v1.0.0 为首个公开发布版；ad-hoc 签名，尚未 Apple 公证 |
 
 当前 ZIP：
 
 ```text
-bilibili-downloader-1.0.1-macos-arm64.zip
+bilibili-downloader-1.1.0-macos-arm64.zip
 ```
 
 下载页同时提供同名 `.sha256` 文件，GitHub 也会显示 Release asset digest。
@@ -67,7 +78,7 @@ bilibili-downloader-1.0.1-macos-arm64.zip
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c bilibili-downloader-1.0.1-macos-arm64.zip.sha256
+shasum -a 256 -c bilibili-downloader-1.1.0-macos-arm64.zip.sha256
 ```
 
 ### 3. 运行架构
@@ -92,7 +103,8 @@ Homebrew 路径作为开发回退。
 - 可选择匿名、Google Chrome 或 Safari 登录状态。
 - 多P/分集支持当前项、全部、`1,3-5` 自定义范围、完整列表和返回链接输入。
 - 画质支持最高可用、最高 4K、1080P、720P、480P，并可列出实际格式。
-- 正常视频自动合并音视频；可额外生成 MP3 V0、严格 FLAC 和无音频视频。
+- 完整视频、无画面音频和无声音视频可独立选择并自由组合，至少选择一种。
+- 独立音频可选 MP3 V0 或严格 FLAC；纯音频计划不再要求选择视频画质。
 - 下载前显示完整摘要，可开始、重新选择或取消。
 - 下载及 FFmpeg 阶段均支持暂停、恢复和确认退出。
 - 成功后自动打开输出目录。
@@ -152,8 +164,8 @@ medialist、直播或任意站内播放列表。
 | `L` | 显示完整列表 |
 | `N` | 全不选，不启动当前链接，并返回链接输入 |
 
-自定义范围会去重、排序并检查上下界，同一选择会同时应用于正常视频、独立音频
-和无音频视频。
+自定义范围会去重、排序并检查上下界，同一选择会同时应用于完整视频、无画面音频
+和无声音视频。
 
 ### 7. 画质策略
 
@@ -167,19 +179,29 @@ medialist、直播或任意站内播放列表。
 | 查看格式 | 列出当前登录状态实际能取得的格式 |
 
 菜单表达的是“上限”，最终格式仍由视频源、账号权限和平台响应决定。会员、4K、
-HDR、杜比等不会因为选择菜单就自动获得。
+HDR、杜比等不会因为选择菜单就自动获得。若只选择无画面音频，程序会跳过画质
+菜单；只要选择了完整视频或无声音视频，就仍需选择画质。
 
-正常视频默认请求独立视频流与音频流并由 FFmpeg 合并，优先输出 MP4；源编码
+完整视频默认请求独立视频流与音频流并由 FFmpeg 合并，优先输出 MP4；源编码
 组合不兼容 MP4 时允许输出 MKV。
 
-### 8. 独立音频与无音频视频
+### 8. 输出文件选择
 
-| 输出 | 源选择与处理 |
+三类输出相互独立，可只选一种或自由组合；如果全部不选，程序会提示重新选择，
+不会创建下载目录或启动下载。
+
+| 输出 | 是否可关闭 | 源选择与处理 |
+|---|---|---|
+| 完整视频（有画面、有声音） | 可以；默认开启 | 按所选画质取得视频与音频并自动合并，优先输出 MP4 |
+| 无画面音频（只有声音） | 可以；默认关闭 | 可选 MP3 V0 或严格 FLAC；纯音频计划不询问视频画质 |
+| 无声音视频（只有画面） | 可以；默认关闭 | 按所选画质下载最佳纯视频流，不包含音轨 |
+
+无画面音频的处理方式：
+
+| 格式 | 源选择与处理 |
 |---|---|
-| 不保留 | 只生成正常带声音视频 |
 | MP3 V0 | 优先最佳 FLAC 音轨，否则最佳可用音轨；使用 libmp3lame `-q:a 0` 转换并输出双声道 |
 | 严格 FLAC | 只接受平台返回且音频编码标识以 `flac` 开头的源 |
-| 无音频视频 | 按所选画质另行下载最佳纯视频流 |
 
 严格 FLAC 的边界：
 
@@ -188,11 +210,11 @@ HDR、杜比等不会因为选择菜单就自动获得。
 - 平台 FLAC 会以 FFmpeg FLAC 压缩等级 8 重新封装/编码，因此不是响应文件的
   逐字节副本。
 - 文件是无损 FLAC 不等于一定达到 Hi-Res 采样率或位深；以实际源参数为准。
-- 若某些分P没有返回 FLAC，正常视频仍会保留，但独立 FLAC 附加任务会报告
-  失败，程序最终退出码为 `1`。
+- 若某些分P没有返回 FLAC，该分P的 FLAC 输出会报告失败；其他已经完成的所选
+  输出仍会保留，程序最终退出码为 `1`。
 
-MP3 的 `-ac 2` 会把多声道源下混为立体声。独立音频会额外下载并处理源音轨，
-不是简单从最终合并视频中无损拆出。所有附加输出都会增加网络流量、磁盘占用
+MP3 的 `-ac 2` 会把多声道源下混为立体声。独立音频会单独下载并处理源音轨，
+不是简单从完整视频中无损拆出。同时选择多类输出会增加网络流量、磁盘占用
 和处理时间。
 
 ### 9. 暂停、继续与退出
@@ -277,7 +299,7 @@ yt-dlp 和 FFmpeg 都在独立 POSIX 进程组中运行。暂停只适用于当�
 | 下载中断 | 使用相同链接、分P和画质重试，yt-dlp 会利用 `.part` 续传 |
 | 磁盘不足 | 清理下载目录；确认没有任务运行后再检查用户缓存 |
 | Terminal 窗口卡在暂停提示 | 直接回车继续，或输入 `Y` 安全退出；不要直接关窗口 |
-| macOS 阻止首次打开 | 按第一部分操作“仍要打开”，不要全局移除隔离属性 |
+| macOS 阻止首次打开 | 确认文件来自本仓库 Release，然后按第一部分第 3 步操作；不要全局移除隔离属性 |
 
 报告问题时建议提供 macOS 版本、芯片型号、视频 URL、所选登录来源和最后
 30 行日志，并先删除个人路径与账号信息。
@@ -291,6 +313,8 @@ yt-dlp 和 FFmpeg 都在独立 POSIX 进程组中运行。暂停只适用于当�
 │   ├── icon-1024-clean.png
 │   ├── launcher.c
 │   └── run.command
+├── docs/
+│   └── images/                  # Gatekeeper 安装步骤截图
 ├── licenses/
 ├── scripts/
 │   ├── build_icon.py
@@ -350,8 +374,8 @@ PYTHONPATH=src .venv-build/bin/python -m unittest discover -s tests -v
 
 ```text
 dist/b站downloader.app
-dist/bilibili-downloader-1.0.1-macos-arm64.zip
-dist/bilibili-downloader-1.0.1-macos-arm64.zip.sha256
+dist/bilibili-downloader-1.1.0-macos-arm64.zip
+dist/bilibili-downloader-1.1.0-macos-arm64.zip.sha256
 ```
 
 构建脚本会：
@@ -361,15 +385,15 @@ dist/bilibili-downloader-1.0.1-macos-arm64.zip.sha256
 3. 校验 vendor yt-dlp 的 SHA-256。
 4. 从 imageio-ffmpeg 取得自包含 arm64 FFmpeg，并确认 MP3/FLAC 编码器存在。
 5. 生成 ICNS、PyInstaller onedir 运行时和原生 arm64 Finder 启动器。
-6. 复制 README、许可证和第三方声明。
+6. 复制 README、安装截图、许可证和第三方声明。
 7. 完成签名、ZIP 打包及 SHA-256 文件生成。
 
 常用构建变量：
 
 | 变量 | 用途 |
 |---|---|
-| `VERSION` | App/ZIP 版本，默认 `1.0.1` |
-| `BUILD_NUMBER` | `CFBundleVersion`，默认 `10001` |
+| `VERSION` | App/ZIP 版本，默认 `1.1.0` |
+| `BUILD_NUMBER` | `CFBundleVersion`，默认 `11000` |
 | `BOOTSTRAP_PYTHON` | 构建虚拟环境所用 Python |
 | `CODESIGN_IDENTITY` | 外层 bundle 签名身份；默认 `-`（ad-hoc） |
 
@@ -388,13 +412,14 @@ dist/bilibili-downloader-1.0.1-macos-arm64.zip.sha256
 
 ### 15. 测试覆盖
 
-当前自动化测试共 32 项，覆盖：
+当前自动化测试共 51 项，覆盖：
 
 - AV/BV/官方 URL、短链和带标题分享文字；
 - 非官方域名、凭据 URL 和命令参数拒绝；
 - 匿名与浏览器登录态命令；
 - 当前/全部/自定义/全不选分P；
-- 画质上限与无音频视频格式；
+- 完整视频、无画面音频、无声音视频的独立选择、自由组合与空计划阻止；
+- 纯音频跳过画质、画质上限与无声音视频格式；
 - MP3 源优先级和严格 FLAC 无回退；
 - 音频缓存路径、清单、原子转换与越界保护；
 - 暂停、恢复、退出以及顽固子进程升级终止；
@@ -404,6 +429,7 @@ dist/bilibili-downloader-1.0.1-macos-arm64.zip.sha256
 
 - `Info.plist`、arm64 架构和代码签名完整性；
 - ZIP SHA-256、解压后的签名和相对启动路径；
+- 安装截图同时存在于 App 与 ZIP，且 ZIP 不包含 `__MACOSX` Finder 元数据；
 - App 在只读状态、空 HOME、最小 PATH 下自检；
 - 无开发机路径或外部 Homebrew 动态依赖；
 - 图标透明边缘；
@@ -462,7 +488,7 @@ macOS Release 混用。
 请只下载自己创作、获得授权、允许离线保存或法律明确允许的内容，并遵守平台
 条款、版权规则与当地法律。项目不对未经授权的下载、传播或商业使用负责。
 
-[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.0.1
+[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.1.0
 [apple-open]: https://support.apple.com/guide/mac-help/mh40616/mac
 [developer-id]: https://developer.apple.com/developer-id/
 [notarization]: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution

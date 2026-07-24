@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 AUDIO_MODE_LABELS = {
-    "none": "不保留独立音频",
+    "none": "不下载",
     "mp3": "MP3 V0（高质量有损，兼容性好）",
     "flac": "FLAC（仅平台实际提供原生 FLAC 时生成）",
 }

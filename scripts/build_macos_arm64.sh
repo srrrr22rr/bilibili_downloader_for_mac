@@ -10,8 +10,8 @@ readonly PYI_DIST="$BUILD_ROOT/pyinstaller-dist"
 readonly PYI_WORK="$BUILD_ROOT/pyinstaller-work"
 readonly FFMPEG_BUNDLE_PATH="$BUILD_ROOT/ffmpeg"
 readonly APP_PATH="$PACKAGE_ROOT/dist/b站downloader.app"
-readonly VERSION="${VERSION:-1.0.1}"
-readonly BUILD_NUMBER="${BUILD_NUMBER:-10001}"
+readonly VERSION="${VERSION:-1.1.0}"
+readonly BUILD_NUMBER="${BUILD_NUMBER:-11000}"
 readonly ZIP_PATH="$PACKAGE_ROOT/dist/bilibili-downloader-${VERSION}-macos-arm64.zip"
 readonly LEGACY_ZIP_PATH="$PACKAGE_ROOT/dist/b站downloader-${VERSION}-macos-arm64.zip"
 readonly BOOTSTRAP_PYTHON="${BOOTSTRAP_PYTHON:-/usr/bin/python3}"
@@ -113,6 +113,9 @@ cp "$BUILD_ROOT/bilibili-downloader.icns" \
     "$APP_PATH/Contents/Resources/bilibili-downloader.icns"
 cp "$PACKAGE_ROOT/README.md" \
     "$APP_PATH/Contents/Resources/使用说明.md"
+/usr/bin/ditto \
+    "$PACKAGE_ROOT/docs" \
+    "$APP_PATH/Contents/Resources/docs"
 cp "$PACKAGE_ROOT/THIRD-PARTY-NOTICES.md" \
     "$APP_PATH/Contents/Resources/THIRD-PARTY-NOTICES.md"
 cp "$PACKAGE_ROOT/LICENSE" \
@@ -127,6 +130,10 @@ chmod 755 \
     "$APP_PATH/Contents/MacOS/bstation-downloader" \
     "$APP_PATH/Contents/Resources/run.command" \
     "$APP_PATH/Contents/Resources/runtime/bstation-downloader-cli"
+
+# Screenshots copied from Finder can carry sign-blocking resource forks.
+# Clean only this newly staged bundle; the source screenshots stay untouched.
+/usr/bin/xattr -cr "$APP_PATH"
 
 # PyInstaller signs collected arm64 Mach-O files ad hoc. Seal the outer bundle
 # as well; a Developer ID identity can replace "-" in the documented release
@@ -144,7 +151,7 @@ chmod 755 \
     "$LEGACY_ZIP_PATH" \
     "$LEGACY_ZIP_PATH.sha256"
 /usr/bin/ditto \
-    -c -k --keepParent --sequesterRsrc \
+    -c -k --norsrc --keepParent \
     "$APP_PATH" \
     "$ZIP_PATH"
 (

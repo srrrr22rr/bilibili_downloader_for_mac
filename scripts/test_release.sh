@@ -9,6 +9,7 @@ readonly CLI="$RUNTIME/bstation-downloader-cli"
 readonly YTDLP="$RUNTIME/_internal/bin/yt-dlp"
 readonly FFMPEG="$RUNTIME/_internal/bin/ffmpeg"
 readonly ICON="$APP_PATH/Contents/Resources/bilibili-downloader.icns"
+readonly GUIDE_IMAGES="$APP_PATH/Contents/Resources/docs/images"
 readonly SMOKE_ROOT="$(mktemp -d)"
 readonly VERSION="$(/usr/libexec/PlistBuddy -c \
     'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
@@ -23,6 +24,16 @@ trap cleanup EXIT
 for required in "$MAIN" "$CLI" "$YTDLP" "$FFMPEG"; do
     if [[ ! -x "$required" ]]; then
         echo "缺少可执行文件：$required" >&2
+        exit 1
+    fi
+done
+
+for guide_image in \
+        "$GUIDE_IMAGES/macos-gatekeeper-01-warning.png" \
+        "$GUIDE_IMAGES/macos-gatekeeper-02-privacy-security.png" \
+        "$GUIDE_IMAGES/macos-gatekeeper-03-confirm-open.png"; do
+    if [[ ! -f "$guide_image" ]]; then
+        echo "缺少安装说明截图：$guide_image" >&2
         exit 1
     fi
 done
@@ -85,10 +96,27 @@ fi
     cd "$PACKAGE_ROOT/dist"
     /usr/bin/shasum -a 256 -c "$(basename "$ZIP_PATH.sha256")"
 )
+readonly ZIP_ENTRY_LIST="$(/usr/bin/unzip -Z1 "$ZIP_PATH")"
+if [[ "$ZIP_ENTRY_LIST" == *"__MACOSX/"* ]]; then
+    echo "发布 ZIP 包含不应分发的 Finder 扩展元数据。" >&2
+    exit 1
+fi
 mkdir -p "$SMOKE_ROOT/archive"
 /usr/bin/ditto -x -k "$ZIP_PATH" "$SMOKE_ROOT/archive"
 readonly ARCHIVED_APP="$SMOKE_ROOT/archive/b站downloader.app"
 /usr/bin/codesign --verify --deep --strict "$ARCHIVED_APP"
+for guide_image in \
+        "$ARCHIVED_APP/Contents/Resources/docs/images/"\
+"macos-gatekeeper-01-warning.png" \
+        "$ARCHIVED_APP/Contents/Resources/docs/images/"\
+"macos-gatekeeper-02-privacy-security.png" \
+        "$ARCHIVED_APP/Contents/Resources/docs/images/"\
+"macos-gatekeeper-03-confirm-open.png"; do
+    if [[ ! -f "$guide_image" ]]; then
+        echo "ZIP 内缺少安装说明截图：$guide_image" >&2
+        exit 1
+    fi
+done
 /bin/chmod -R a-w "$ARCHIVED_APP"
 readonly SMOKE_CLI="$ARCHIVED_APP/Contents/Resources/runtime/"\
 "bstation-downloader-cli"
@@ -147,6 +175,7 @@ mkdir -p "$MEDIA_ROOT"
 for media in \
         "$MEDIA_ROOT/audio.mp3" \
         "$MEDIA_ROOT/audio.flac" \
+        "$MEDIA_ROOT/video.mp4" \
         "$MEDIA_ROOT/merged.mp4"; do
     "$FFMPEG" -hide_banner -loglevel error \
         -i "$media" -f null -
@@ -157,4 +186,4 @@ echo "  架构：arm64"
 echo "  签名：ad-hoc/指定 identity 完整"
 echo "  运行：只读 App + 空 HOME + 最小 PATH"
 echo "  工具：内置 yt-dlp、FFmpeg、MP3、FLAC"
-echo "  媒体：MP3/FLAC 编码、MP4 音视频合并与解码"
+echo "  媒体：MP3/FLAC、无声音 MP4、音视频合并与解码"
