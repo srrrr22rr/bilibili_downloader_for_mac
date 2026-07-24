@@ -24,7 +24,7 @@ Terminal 下载前端。发布包内置 Python 运行时、官方 yt-dlp 和 FFm
 
 ## 五分钟开始
 
-1. 下载 `b站downloader-2.0.0-macos-arm64.zip`，并核对旁边
+1. 下载 `bilibili-downloader-2.0.0-macos-arm64.zip`，并核对旁边
    `.sha256` 文件中的 SHA-256。
 2. 解压后，把 `b站downloader.app` 放到“应用程序”或其他你有写权限的位置。
 3. 双击 App。程序会打开 Terminal，所有交互都在 Terminal 窗口中进行。
