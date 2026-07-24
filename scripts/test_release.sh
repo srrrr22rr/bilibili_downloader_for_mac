@@ -12,7 +12,7 @@ readonly ICON="$APP_PATH/Contents/Resources/bilibili-downloader.icns"
 readonly SMOKE_ROOT="$(mktemp -d)"
 readonly VERSION="$(/usr/libexec/PlistBuddy -c \
     'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-readonly ZIP_PATH="$PACKAGE_ROOT/dist/b站downloader-${VERSION}-macos-arm64.zip"
+readonly ZIP_PATH="$PACKAGE_ROOT/dist/bilibili-downloader-${VERSION}-macos-arm64.zip"
 
 cleanup() {
     /bin/chmod -R u+w "$SMOKE_ROOT" 2>/dev/null || true
