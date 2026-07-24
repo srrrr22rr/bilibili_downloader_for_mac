@@ -149,6 +149,102 @@ def catalog_from_video_info(
     )
 
 
+def catalog_from_bangumi_info(
+    info: dict,
+    requested_episode_id: Optional[int],
+) -> PartCatalog:
+    """Convert a Bangumi season response into yt-dlp playlist positions.
+
+    Bilibili episode (``ep``) pages describe only the current episode to
+    yt-dlp. The related season (``ss``) page is the playlist, so the catalog
+    keeps episode URLs for "current" mode and the season URL for all/custom
+    selections.
+    """
+    try:
+        season_id = int(info.get("season_id"))
+    except (TypeError, ValueError):
+        raise SelectionError("番剧季度信息缺少 season_id")
+    if season_id <= 0:
+        raise SelectionError("番剧季度信息中的 season_id 无效")
+
+    episodes = []
+    raw_episodes = info.get("episodes") or []
+    seen_episode_ids = set()
+    for episode in raw_episodes:
+        if not isinstance(episode, dict):
+            raise SelectionError("番剧季度信息包含无效分集")
+        raw_episode_id = episode.get("id") or episode.get("ep_id")
+        try:
+            episode_id = int(raw_episode_id)
+        except (TypeError, ValueError):
+            raise SelectionError("番剧季度信息包含无效分集编号")
+        if episode_id <= 0 or episode_id in seen_episode_ids:
+            raise SelectionError("番剧季度信息包含重复或无效分集编号")
+        seen_episode_ids.add(episode_id)
+
+        short_title = str(episode.get("title") or "").replace("\n", " ").strip()
+        long_title = (
+            str(episode.get("long_title") or "").replace("\n", " ").strip()
+        )
+        title_parts = []
+        # Numeric short titles repeat the playlist position ("第1集 1 ...").
+        # Keep meaningful labels such as "PV" while preferring long titles.
+        visible_short_title = (
+            short_title if short_title and not short_title.isdecimal() else ""
+        )
+        for value in (visible_short_title, long_title):
+            if value and value not in title_parts:
+                title_parts.append(value)
+        if not title_parts and short_title:
+            title_parts.append(short_title)
+        episodes.append(
+            (
+                episode_id,
+                " ".join(title_parts) or "第{}集".format(len(episodes) + 1),
+            )
+        )
+
+    if not episodes:
+        raise SelectionError("番剧季度信息中没有可用分集")
+
+    parts = tuple(
+        Part(index, title)
+        for index, (_, title) in enumerate(episodes, start=1)
+    )
+    current_index = 1
+    if requested_episode_id is not None:
+        matched_index = next(
+            (
+                index
+                for index, (episode_id, _) in enumerate(episodes, start=1)
+                if episode_id == requested_episode_id
+            ),
+            None,
+        )
+        if matched_index is None:
+            # Never silently turn an unrecognized special episode into E01.
+            raise SelectionError("当前番剧分集不在季度正片列表中")
+        current_index = matched_index
+
+    current_episode_id = episodes[current_index - 1][0]
+    return PartCatalog(
+        title=str(
+            info.get("title")
+            or info.get("season_title")
+            or "番剧"
+        ).replace("\n", " "),
+        parts=parts,
+        base_url="https://www.bilibili.com/bangumi/play/ss{}".format(
+            season_id
+        ),
+        current_url="https://www.bilibili.com/bangumi/play/ep{}".format(
+            current_episode_id
+        ),
+        current_index=current_index,
+        kind_label="分集",
+    )
+
+
 def catalog_from_flat_json(payload: str, original_url: str) -> PartCatalog:
     try:
         data = json.loads(payload)
@@ -287,14 +383,24 @@ def render_part_lines(
         visible = list(catalog.parts[:20]) + list(catalog.parts[-5:])
         hidden = True
 
-    lines = [
-        "  P{:<3} {}".format(part.index, part.title[:72])
-        for part in visible
-    ]
+    if catalog.kind_label == "分集":
+        lines = [
+            "  第{}集  {}".format(part.index, part.title[:72])
+            for part in visible
+        ]
+    else:
+        lines = [
+            "  P{:<3} {}".format(part.index, part.title[:72])
+            for part in visible
+        ]
     if hidden:
-        lines.insert(20, "  …… 中间 {} 个分P已折叠，输入 L 查看全部 ……".format(
-            total - 25
-        ))
+        lines.insert(
+            20,
+            "  …… 中间 {} 个{}已折叠，输入 L 查看全部 ……".format(
+                total - 25,
+                catalog.kind_label,
+            ),
+        )
     return lines
 
 
@@ -306,19 +412,25 @@ def choose_part_selection(
 ) -> Optional[PartSelection]:
     total = len(catalog.parts)
     if total <= 1:
-        write("\n检测结果：单P视频，无需选集。")
+        if catalog.kind_label == "分集":
+            write("\n检测结果：仅检测到 1 集，无需选集。")
+        else:
+            write("\n检测结果：单P视频，无需选集。")
         return PartSelection(catalog, (1,), "current")
 
+    marker = "第{}集".format(catalog.current_index) if (
+        catalog.kind_label == "分集"
+    ) else "P{}".format(catalog.current_index)
     write("\n检测到 {} 个{}：".format(total, catalog.kind_label))
     for line in render_part_lines(catalog):
         write(line)
     write(
-        "\n选择方法：直接回车=当前 P{}；A=全部；N=全不选；"
-        "也可输入 1,3-5；L=查看完整列表。".format(catalog.current_index)
+        "\n选择方法：直接回车=当前{}；A=全部；N=全不选；"
+        "也可输入 1,3-5；L=查看完整列表。".format(marker)
     )
 
     while True:
-        answer = prompt("请选择分P：").strip()
+        answer = prompt("请选择{}：".format(catalog.kind_label)).strip()
         lowered = answer.lower()
         if answer == "":
             return PartSelection(

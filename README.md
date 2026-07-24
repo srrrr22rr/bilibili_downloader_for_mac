@@ -48,16 +48,16 @@ ps：登录不能绕过会员限制。
 |---|---|
 | 处理器 | Apple Silicon arm64；不支持 Intel Mac，后续芯片以实际兼容性为准 |
 | 最低系统 | macOS 14 Sonoma |
-| App | b站downloader 1.0.0 |
+| App | b站downloader 1.0.1 |
 | Python 运行时 | 3.9.6 arm64 |
 | yt-dlp | 2026.07.04 官方 macOS standalone binary |
 | FFmpeg | 7.1 arm64，由 imageio-ffmpeg 0.6.0 提供 |
-| 发布状态 | 首个公开发布版；ad-hoc 签名，尚未 Apple 公证 |
+| 发布状态 | v1.0.1 兼容性修复版；v1.0.0 为首个公开发布版；ad-hoc 签名，尚未 Apple 公证 |
 
 当前 ZIP：
 
 ```text
-bilibili-downloader-1.0.0-macos-arm64.zip
+bilibili-downloader-1.0.1-macos-arm64.zip
 ```
 
 下载页同时提供同名 `.sha256` 文件，GitHub 也会显示 Release asset digest。
@@ -67,7 +67,7 @@ bilibili-downloader-1.0.0-macos-arm64.zip
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c bilibili-downloader-1.0.0-macos-arm64.zip.sha256
+shasum -a 256 -c bilibili-downloader-1.0.1-macos-arm64.zip.sha256
 ```
 
 ### 3. 运行架构
@@ -135,17 +135,21 @@ Safari 如果报告 `Operation not permitted`，可能需要给 Terminal“完�
 会由 yt-dlp 解析规范链接，再用 flat-playlist 探测。所有探测都失败时，程序
 降级为“当前单P”，不会凭空猜测分P编号。
 
+番剧 `ep`/`ss` 播放页会先读取对应季度的公开分集目录。只选当前集时保留
+`ep` 链接；全选或自选多集时切换到对应 `ss` 播放列表，确保编号与实际分集
+顺序一致。若接口信息不完整，程序会安全降级，不会把未知分集误当作第 1 集。
+
 当前只支持单个视频、番剧播放页及其分P/分集；不支持用户空间、收藏夹、
 medialist、直播或任意站内播放列表。
 
-多P菜单：
+多P/分集菜单：
 
 | 输入 | 行为 |
 |---|---|
-| 直接回车 | 只下载当前 P |
+| 直接回车 | 只下载当前 P/集 |
 | `A` | 下载全部 |
-| `1,3-5` | 下载 P1、P3、P4、P5 |
-| `L` | 显示完整分P列表 |
+| `1,3-5` | 下载第 1、3、4、5 个 P/分集 |
+| `L` | 显示完整列表 |
 | `N` | 全不选，不启动当前链接，并返回链接输入 |
 
 自定义范围会去重、排序并检查上下界，同一选择会同时应用于正常视频、独立音频
@@ -346,8 +350,8 @@ PYTHONPATH=src .venv-build/bin/python -m unittest discover -s tests -v
 
 ```text
 dist/b站downloader.app
-dist/bilibili-downloader-1.0.0-macos-arm64.zip
-dist/bilibili-downloader-1.0.0-macos-arm64.zip.sha256
+dist/bilibili-downloader-1.0.1-macos-arm64.zip
+dist/bilibili-downloader-1.0.1-macos-arm64.zip.sha256
 ```
 
 构建脚本会：
@@ -364,8 +368,8 @@ dist/bilibili-downloader-1.0.0-macos-arm64.zip.sha256
 
 | 变量 | 用途 |
 |---|---|
-| `VERSION` | App/ZIP 版本，默认 `1.0.0` |
-| `BUILD_NUMBER` | `CFBundleVersion`，默认 `10000` |
+| `VERSION` | App/ZIP 版本，默认 `1.0.1` |
+| `BUILD_NUMBER` | `CFBundleVersion`，默认 `10001` |
 | `BOOTSTRAP_PYTHON` | 构建虚拟环境所用 Python |
 | `CODESIGN_IDENTITY` | 外层 bundle 签名身份；默认 `-`（ad-hoc） |
 
@@ -458,7 +462,7 @@ macOS Release 混用。
 请只下载自己创作、获得授权、允许离线保存或法律明确允许的内容，并遵守平台
 条款、版权规则与当地法律。项目不对未经授权的下载、传播或商业使用负责。
 
-[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.0.0
+[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.0.1
 [apple-open]: https://support.apple.com/guide/mac-help/mh40616/mac
 [developer-id]: https://developer.apple.com/developer-id/
 [notarization]: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
