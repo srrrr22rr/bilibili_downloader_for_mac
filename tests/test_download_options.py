@@ -52,6 +52,98 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(len(catalog.parts), 2)
         self.assertNotIn("p=", catalog.base_url)
 
+    def test_bangumi_episode_catalog_maps_to_season_playlist_positions(self):
+        catalog = options.catalog_from_bangumi_info(
+            {
+                "season_id": 25733,
+                "title": "青春猪头少年不会梦到兔女郎学姐",
+                "episodes": [
+                    {
+                        "id": 251076,
+                        "title": "1",
+                        "long_title": "学姐是兔女郎",
+                    },
+                    {
+                        "id": 251077,
+                        "title": "2",
+                        "long_title": "初次约会难免风波",
+                    },
+                    {
+                        "id": 251078,
+                        "title": "3",
+                        "long_title": "唯独没有你的世界",
+                    },
+                ],
+            },
+            251077,
+        )
+
+        self.assertEqual(catalog.kind_label, "分集")
+        self.assertEqual(catalog.current_index, 2)
+        self.assertEqual(catalog.parts[0].title, "学姐是兔女郎")
+        self.assertEqual(
+            catalog.base_url,
+            "https://www.bilibili.com/bangumi/play/ss25733",
+        )
+        self.assertEqual(
+            catalog.current_url,
+            "https://www.bilibili.com/bangumi/play/ep251077",
+        )
+        self.assertEqual(
+            options.render_part_lines(catalog)[0],
+            "  第1集  学姐是兔女郎",
+        )
+
+        custom = options.PartSelection(catalog, (1, 3), "custom")
+        self.assertEqual(custom.url, catalog.base_url)
+        self.assertEqual(
+            options.playlist_arguments(custom),
+            ["--yes-playlist", "--playlist-items", "1,3"],
+        )
+        current = options.PartSelection(catalog, (2,), "current")
+        self.assertEqual(current.url, catalog.current_url)
+        self.assertEqual(
+            options.playlist_arguments(current),
+            ["--no-playlist"],
+        )
+
+    def test_bangumi_catalog_rejects_missing_episodes(self):
+        with self.assertRaises(options.SelectionError):
+            options.catalog_from_bangumi_info(
+                {"season_id": 25733, "episodes": []},
+                251076,
+            )
+
+    def test_bangumi_catalog_never_maps_an_unknown_episode_to_first(self):
+        with self.assertRaises(options.SelectionError):
+            options.catalog_from_bangumi_info(
+                {
+                    "season_id": 25733,
+                    "episodes": [
+                        {
+                            "id": 251076,
+                            "title": "1",
+                            "long_title": "学姐是兔女郎",
+                        }
+                    ],
+                },
+                999999,
+            )
+
+    def test_bangumi_catalog_rejects_malformed_entries_without_reindexing(self):
+        with self.assertRaises(options.SelectionError):
+            options.catalog_from_bangumi_info(
+                {
+                    "season_id": 25733,
+                    "episodes": [
+                        {"id": 251076, "title": "1"},
+                        {"title": "缺少 ID"},
+                        {"id": 251078, "title": "3"},
+                    ],
+                },
+                251078,
+            )
+
 
 class PartSelectionTests(unittest.TestCase):
     def setUp(self):

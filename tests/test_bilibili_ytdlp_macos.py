@@ -57,6 +57,16 @@ class NormalizeUrlTests(unittest.TestCase):
             ),
             "https://b23.tv/abcdef",
         )
+        bangumi_text = (
+            "【青春猪头少年不会梦到兔女郎学姐：第1话 学姐是兔女郎】 "
+            "https://www.bilibili.com/bangumi/play/ep251076/"
+            "?share_source=copy_web"
+        )
+        self.assertEqual(
+            app.normalize_bilibili_url(bangumi_text),
+            "https://www.bilibili.com/bangumi/play/ep251076/"
+            "?share_source=copy_web",
+        )
 
     def test_rejects_non_bilibili_and_credentials(self):
         invalid = (
@@ -138,6 +148,97 @@ class CommandTests(unittest.TestCase):
         self.assertIn("--yes-playlist", flattened)
         self.assertNotIn("--flat-playlist", current)
         self.assertIn("--no-playlist", current)
+
+
+class BangumiCatalogFetchTests(unittest.TestCase):
+    def setUp(self):
+        self.season_info = {
+            "season_id": 25733,
+            "title": "青春猪头少年不会梦到兔女郎学姐",
+            "episodes": [
+                {
+                    "id": 251076,
+                    "title": "1",
+                    "long_title": "学姐是兔女郎",
+                },
+                {
+                    "id": 251077,
+                    "title": "2",
+                    "long_title": "初次约会难免风波",
+                },
+            ],
+        }
+
+    def test_episode_url_uses_season_catalog_without_flat_probe(self):
+        url = (
+            "https://www.bilibili.com/bangumi/play/ep251076/"
+            "?share_source=copy_web"
+        )
+        with mock.patch.object(
+            app,
+            "get_bangumi_info",
+            return_value=(self.season_info, 251076),
+        ) as get_bangumi, mock.patch.object(
+            app,
+            "get_video_info",
+        ) as get_video, mock.patch.object(
+            app,
+            "_run_json_probe",
+        ) as run_probe:
+            catalog = app.fetch_part_catalog(url, None, "/usr/bin/ffmpeg")
+
+        self.assertEqual(len(catalog.parts), 2)
+        self.assertEqual(catalog.kind_label, "分集")
+        self.assertEqual(catalog.current_index, 1)
+        self.assertTrue(catalog.base_url.endswith("/ss25733"))
+        get_bangumi.assert_called_once_with(url)
+        get_video.assert_not_called()
+        run_probe.assert_not_called()
+
+    def test_bangumi_selection_summary_uses_episode_wording(self):
+        catalog = app.catalog_from_bangumi_info(
+            self.season_info,
+            251077,
+        )
+        current = PartSelection(catalog, (2,), "current")
+        custom = PartSelection(catalog, (1, 2), "custom")
+
+        self.assertEqual(
+            app.selection_summary(current),
+            "当前第2集：初次约会难免风波",
+        )
+        self.assertEqual(
+            app.selection_summary(custom),
+            "第1-2集（共 2 集）",
+        )
+
+    def test_short_link_can_use_canonical_episode_url(self):
+        short_url = "https://b23.tv/example"
+        canonical_url = (
+            "https://www.bilibili.com/bangumi/play/ep251077"
+        )
+        with mock.patch.object(
+            app,
+            "get_video_info",
+            side_effect=app.BilibiliAPIError("不是普通 BV/AV 链接"),
+        ), mock.patch.object(
+            app,
+            "_run_json_probe",
+            return_value=({"webpage_url": canonical_url}, ""),
+        ) as run_probe, mock.patch.object(
+            app,
+            "get_bangumi_info",
+            return_value=(self.season_info, 251077),
+        ) as get_bangumi:
+            catalog = app.fetch_part_catalog(
+                short_url,
+                None,
+                "/usr/bin/ffmpeg",
+            )
+
+        self.assertEqual(catalog.current_index, 2)
+        get_bangumi.assert_called_once_with(canonical_url)
+        run_probe.assert_called_once()
 
 
 class PlanConfirmationTests(unittest.TestCase):

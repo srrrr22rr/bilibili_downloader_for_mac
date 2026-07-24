@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
-from bilibili_api import BilibiliAPIError, get_video_info
+from bilibili_api import BilibiliAPIError, get_bangumi_info, get_video_info
 from download_controls import (
     build_video_only_command,
     run_process_with_pause,
@@ -32,6 +32,7 @@ from download_options import (
     SelectionError,
     build_audio_conversion,
     build_audio_source_command,
+    catalog_from_bangumi_info,
     catalog_from_flat_json,
     catalog_from_video_info,
     choose_part_selection,
@@ -333,13 +334,27 @@ def fetch_part_catalog(
     used as a fallback. Failure of every metadata route deliberately degrades
     to one current item instead of inventing playlist indices.
     """
-    print("\n正在读取视频标题和分P信息……")
+    print("\n正在读取视频标题和分P/分集信息……")
     direct_error = ""
+    if "/bangumi/play/" in urlsplit(url).path:
+        try:
+            info, requested_episode_id = get_bangumi_info(url)
+            return catalog_from_bangumi_info(info, requested_episode_id)
+        except (
+            BilibiliAPIError,
+            KeyError,
+            SelectionError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            direct_error = str(exc)
+
     try:
         info, requested_page = get_video_info(url)
         return catalog_from_video_info(info, requested_page)
     except (BilibiliAPIError, KeyError, TypeError, ValueError) as exc:
-        direct_error = str(exc)
+        if not direct_error:
+            direct_error = str(exc)
 
     current_data, current_error = _run_json_probe(
         build_part_probe_command(
@@ -350,6 +365,24 @@ def fetch_part_catalog(
         )
     )
     if current_data:
+        canonical_url = str(
+            current_data.get("webpage_url")
+            or current_data.get("original_url")
+            or url
+        )
+        if "/bangumi/play/" in urlsplit(canonical_url).path:
+            try:
+                info, requested_episode_id = get_bangumi_info(canonical_url)
+                return catalog_from_bangumi_info(info, requested_episode_id)
+            except (
+                BilibiliAPIError,
+                KeyError,
+                SelectionError,
+                TypeError,
+                ValueError,
+            ):
+                pass
+
         bvid = _bvid_from_metadata(current_data)
         if bvid:
             try:
@@ -501,7 +534,11 @@ def choose_audio_mode(*, prompt=input, write=print) -> str:
 def selection_summary(selection: PartSelection) -> str:
     total = len(selection.catalog.parts)
     if total <= 1:
-        return "单P视频"
+        return (
+            "单集"
+            if selection.catalog.kind_label == "分集"
+            else "单P视频"
+        )
     if selection.mode == "current":
         part = next(
             (
@@ -511,9 +548,16 @@ def selection_summary(selection: PartSelection) -> str:
             ),
             selection.catalog.parts[0],
         )
+        if selection.catalog.kind_label == "分集":
+            return "当前第{}集：{}".format(part.index, part.title)
         return "当前 P{}：{}".format(part.index, part.title)
     if selection.mode == "all":
         return "全部 {} 个{}".format(total, selection.catalog.kind_label)
+    if selection.catalog.kind_label == "分集":
+        return "第{}集（共 {} 集）".format(
+            compress_indices(selection.indices),
+            len(selection.indices),
+        )
     return "P{}（共 {} 个）".format(
         compress_indices(selection.indices),
         len(selection.indices),
@@ -534,7 +578,12 @@ def confirm_download_plan(
     write("请确认下载计划")
     write("  视频：{}".format(selection.catalog.title))
     write("  链接：{}".format(selection.url))
-    write("  分P：{}".format(selection_summary(selection)))
+    write(
+        "  {}：{}".format(
+            selection.catalog.kind_label,
+            selection_summary(selection),
+        )
+    )
     write("  登录：{}".format(browser_label))
     write("  画质：{}".format(QUALITY_CHOICES[quality_key]["label"]))
     write("  独立音频：{}".format(AUDIO_MODE_LABELS[audio_mode]))

@@ -15,6 +15,7 @@ import requests
 
 
 VIEW_API = "https://api.bilibili.com/x/web-interface/view"
+BANGUMI_SEASON_API = "https://api.bilibili.com/pgc/view/web/season"
 PLAYURL_API = "https://api.bilibili.com/x/player/playurl"
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -102,6 +103,52 @@ def get_video_info(value):
         raise BilibiliAPIError("获取视频信息失败：{}".format(exc))
     payload = _json_response(response, "获取视频信息")
     return payload["data"], requested_page
+
+
+def parse_bangumi_input(value):
+    """Return a season lookup and the requested episode id, when present."""
+    value = value.strip()
+    if not value:
+        raise BilibiliAPIError("番剧链接不能为空")
+
+    path = urlparse(value if "://" in value else "").path
+    episode_match = re.search(
+        r"/bangumi/play/ep(\d+)(?:/|$)",
+        path,
+        re.IGNORECASE,
+    )
+    if episode_match:
+        episode_id = episode_match.group(1)
+        return {"ep_id": episode_id}, int(episode_id)
+
+    season_match = re.search(
+        r"/bangumi/play/ss(\d+)(?:/|$)",
+        path,
+        re.IGNORECASE,
+    )
+    if season_match:
+        return {"season_id": season_match.group(1)}, None
+
+    raise BilibiliAPIError("无法识别该番剧链接中的 ep 或 ss 编号")
+
+
+def get_bangumi_info(value):
+    """Fetch the public season catalog for an episode or season play page."""
+    params, requested_episode_id = parse_bangumi_input(value)
+    try:
+        response = requests.get(
+            BANGUMI_SEASON_API,
+            params=params,
+            headers=_headers(value),
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        raise BilibiliAPIError("获取番剧分集信息失败：{}".format(exc))
+    payload = _json_response(response, "获取番剧分集信息")
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise BilibiliAPIError("获取番剧分集信息失败：接口未返回季度信息")
+    return result, requested_episode_id
 
 
 def build_video_page_url(bvid, page=None):
