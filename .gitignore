@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local build environment and reproducible generated artifacts.
+.venv-build/
+build/
+dist/
+
+# First chroma-key extraction draft; the build uses icon-1024-clean.png.
+assets/icon-1024-transparent.png
