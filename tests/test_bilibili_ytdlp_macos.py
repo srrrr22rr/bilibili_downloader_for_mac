@@ -86,6 +86,7 @@ class CommandTests(unittest.TestCase):
             "https://www.bilibili.com/video/BV1cb411V7Lm",
             "chrome",
             "3",
+            "1",
             ["--no-playlist"],
             "/usr/local/bin/ffmpeg",
         )
@@ -96,12 +97,17 @@ class CommandTests(unittest.TestCase):
         self.assertIn("height<=1080", " ".join(command))
         self.assertIn("--continue", command)
         self.assertIn("--part", command)
+        self.assertIn(
+            ".video-f%(format_id)s.",
+            command[command.index("--output") + 1],
+        )
 
     def test_anonymous_command_does_not_read_browser(self):
         command = app.build_download_command(
             "https://www.bilibili.com/video/BV1cb411V7Lm",
             None,
             "1",
+            "2",
             ["--yes-playlist", "--playlist-items", "1,3-4"],
             "/usr/local/bin/ffmpeg",
         )
@@ -112,6 +118,54 @@ class CommandTests(unittest.TestCase):
             command[command.index("--playlist-items") + 1],
             "1,3-4",
         )
+
+    def test_auto_audio_uses_best_track_and_legacy_single_file_fallback(self):
+        self.assertEqual(
+            app.build_combined_format_selector("3", "1"),
+            "bv[height<=1080]+ba/b[height<=1080]",
+        )
+
+    def test_aac_audio_tiers_fall_back_only_to_documented_lower_tiers(self):
+        expected = {
+            "2": (
+                "bv[height<=1080]+30280/"
+                "bv[height<=1080]+30232/"
+                "bv[height<=1080]+30216"
+            ),
+            "3": "bv[height<=1080]+30232/bv[height<=1080]+30216",
+            "4": "bv[height<=1080]+30216",
+        }
+        for audio_quality_key, selector in expected.items():
+            with self.subTest(audio_quality_key=audio_quality_key):
+                self.assertEqual(
+                    app.build_combined_format_selector(
+                        "3",
+                        audio_quality_key,
+                    ),
+                    selector,
+                )
+
+    def test_special_audio_tiers_are_strict_without_silent_aac_fallback(self):
+        self.assertEqual(
+            app.build_combined_format_selector("1", "5"),
+            "bv+30250",
+        )
+        self.assertEqual(
+            app.build_combined_format_selector("1", "6"),
+            "bv+30251",
+        )
+
+    def test_combined_selector_rejects_unknown_video_or_audio_choice(self):
+        for quality_key, audio_quality_key in (("9", "1"), ("1", "9")):
+            with self.subTest(
+                quality_key=quality_key,
+                audio_quality_key=audio_quality_key,
+            ):
+                with self.assertRaises(ValueError):
+                    app.build_combined_format_selector(
+                        quality_key,
+                        audio_quality_key,
+                    )
 
     def test_video_only_sidecar_matches_selected_quality(self):
         command = app.build_video_only_track_command(
@@ -264,6 +318,38 @@ class PlanConfirmationTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_combined_audio_quality_defaults_and_accepts_every_tier(self):
+        for answer, expected in (
+            ("", "1"),
+            ("1", "1"),
+            ("2", "2"),
+            ("3", "3"),
+            ("4", "4"),
+            ("5", "5"),
+            ("6", "6"),
+            ("7", "7"),
+        ):
+            with self.subTest(answer=answer):
+                self.assertEqual(
+                    app.choose_combined_audio_quality(
+                        prompt=lambda _: answer,
+                        write=lambda _: None,
+                    ),
+                    expected,
+                )
+
+    def test_combined_audio_quality_reprompts_after_invalid_input(self):
+        answers = iter(("wrong", "3"))
+        messages = []
+        self.assertEqual(
+            app.choose_combined_audio_quality(
+                prompt=lambda _: next(answers),
+                write=messages.append,
+            ),
+            "3",
+        )
+        self.assertTrue(any("1 至 7" in message for message in messages))
+
     def test_output_plan_defaults_to_combined_video(self):
         answers = iter(("", "", ""))
         outputs = app.choose_output_plan(
@@ -305,6 +391,7 @@ class PlanConfirmationTests(unittest.TestCase):
                     self.selection,
                     "Google Chrome",
                     "3",
+                    "5",
                     app.DownloadOutputs(True, "flac", True),
                     prompt=lambda _: answer,
                     write=messages.append,
@@ -314,6 +401,7 @@ class PlanConfirmationTests(unittest.TestCase):
                 self.assertIn("多P测试视频", rendered)
                 self.assertIn("P1,3-4", rendered)
                 self.assertIn("1080P", rendered)
+                self.assertIn("完整视频音质：杜比音频", rendered)
                 self.assertIn("FLAC", rendered)
                 self.assertIn("完整视频：下载", rendered)
                 self.assertIn("无声音视频：下载", rendered)
@@ -324,6 +412,7 @@ class PlanConfirmationTests(unittest.TestCase):
             self.selection,
             "匿名",
             None,
+            None,
             app.DownloadOutputs(False, "mp3", False),
             prompt=lambda _: "Q",
             write=messages.append,
@@ -331,23 +420,28 @@ class PlanConfirmationTests(unittest.TestCase):
         rendered = "\n".join(messages)
         self.assertEqual(action, "quit")
         self.assertIn("画质：不适用（仅下载音频）", rendered)
+        self.assertIn("完整视频音质：不适用（未选择完整视频）", rendered)
         self.assertIn("完整视频：不下载", rendered)
         self.assertIn("无画面音频：MP3", rendered)
         self.assertIn("无声音视频：不下载", rendered)
 
     def test_confirmation_rejects_empty_or_unqualified_video_plan(self):
         invalid = (
-            (None, app.DownloadOutputs(False, "none", False)),
-            (None, app.DownloadOutputs(False, "none", True)),
-            (None, app.DownloadOutputs(False, "wav", False)),
+            (None, None, app.DownloadOutputs(False, "none", False)),
+            (None, None, app.DownloadOutputs(False, "none", True)),
+            (None, None, app.DownloadOutputs(False, "wav", False)),
+            ("3", None, app.DownloadOutputs(True, "none", False)),
+            ("3", "9", app.DownloadOutputs(True, "none", False)),
+            ("3", "1", app.DownloadOutputs(False, "none", True)),
         )
-        for quality_key, outputs in invalid:
+        for quality_key, combined_audio_quality_key, outputs in invalid:
             with self.subTest(outputs=outputs):
                 with self.assertRaises(ValueError):
                     app.confirm_download_plan(
                         self.selection,
                         "匿名",
                         quality_key,
+                        combined_audio_quality_key,
                         outputs,
                         prompt=lambda _: "Q",
                         write=lambda _: None,
@@ -376,6 +470,7 @@ class MainFlowTests(unittest.TestCase):
         outputs,
         decision,
         quality_key="3",
+        combined_audio_quality_key="2",
     ):
         stack.enter_context(
             mock.patch.object(
@@ -415,6 +510,13 @@ class MainFlowTests(unittest.TestCase):
                 return_value=quality_key,
             )
         )
+        choose_combined_audio_quality = stack.enter_context(
+            mock.patch.object(
+                app,
+                "choose_combined_audio_quality",
+                return_value=combined_audio_quality_key,
+            )
+        )
         stack.enter_context(
             mock.patch.object(
                 app,
@@ -429,11 +531,14 @@ class MainFlowTests(unittest.TestCase):
                 return_value=decision,
             )
         )
-        return choose_quality
+        return choose_quality, choose_combined_audio_quality
 
     def test_quit_at_confirmation_starts_no_download_or_open(self):
         with ExitStack() as stack:
-            self._patch_plan_inputs(
+            (
+                choose_quality,
+                choose_combined_audio_quality,
+            ) = self._patch_plan_inputs(
                 stack,
                 outputs=app.DownloadOutputs(True, "mp3", True),
                 decision="quit",
@@ -449,6 +554,52 @@ class MainFlowTests(unittest.TestCase):
 
         run_process.assert_not_called()
         subprocess_run.assert_not_called()
+        choose_quality.assert_called_once_with()
+        choose_combined_audio_quality.assert_called_once_with()
+
+    def test_audio_format_listing_returns_to_combined_audio_menu(self):
+        with ExitStack() as stack:
+            _, choose_combined_audio_quality = self._patch_plan_inputs(
+                stack,
+                outputs=app.DownloadOutputs(True, "none", False),
+                decision="quit",
+            )
+            choose_combined_audio_quality.side_effect = ("7", "3")
+            show_available_formats = stack.enter_context(
+                mock.patch.object(app, "show_available_formats")
+            )
+
+            self.assertEqual(app.main(), 0)
+
+        self.assertEqual(choose_combined_audio_quality.call_count, 2)
+        show_available_formats.assert_called_once_with(
+            self.selection,
+            None,
+            "/usr/local/bin/ffmpeg",
+            "完整视频音质",
+        )
+
+    def test_format_listing_targets_first_selected_part_not_current_part(self):
+        with mock.patch.object(
+            app.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=0),
+        ) as subprocess_run, mock.patch("builtins.input", return_value=""):
+            app.show_available_formats(
+                self.selection,
+                None,
+                "/usr/local/bin/ffmpeg",
+                "完整视频音质",
+            )
+
+        command = subprocess_run.call_args.args[0]
+        self.assertEqual(command[-2], "--")
+        self.assertEqual(command[-1], self.selection.url)
+        self.assertIn("--yes-playlist", command)
+        self.assertEqual(
+            command[command.index("--playlist-items") + 1],
+            "1",
+        )
 
     def test_custom_parts_are_shared_by_video_audio_and_video_only(self):
         commands = []
@@ -504,6 +655,12 @@ class MainFlowTests(unittest.TestCase):
             self.assertEqual(app.main(), 0)
 
         self.assertEqual(len(commands), 3)
+        self.assertEqual(
+            commands[0][commands[0].index("--format") + 1],
+            "bv[height<=1080]+30280/"
+            "bv[height<=1080]+30232/"
+            "bv[height<=1080]+30216",
+        )
         playlist_values = [
             command[command.index("--playlist-items") + 1]
             for command in commands
@@ -571,7 +728,10 @@ class MainFlowTests(unittest.TestCase):
             stack.enter_context(
                 mock.patch.object(app, "OUTPUT_DIR", output_path)
             )
-            choose_quality = self._patch_plan_inputs(
+            (
+                choose_quality,
+                choose_combined_audio_quality,
+            ) = self._patch_plan_inputs(
                 stack,
                 outputs=app.DownloadOutputs(False, "mp3", False),
                 decision="start",
@@ -612,6 +772,7 @@ class MainFlowTests(unittest.TestCase):
                 self.assertEqual(app.main(), 0)
 
         choose_quality.assert_not_called()
+        choose_combined_audio_quality.assert_not_called()
         self.assertEqual(len(commands), 1)
         self.assertIn("--print-to-file", commands[0])
         self.assertNotIn("--merge-output-format", commands[0])
@@ -634,7 +795,10 @@ class MainFlowTests(unittest.TestCase):
             stack.enter_context(
                 mock.patch.object(app, "OUTPUT_DIR", output_path)
             )
-            choose_quality = self._patch_plan_inputs(
+            (
+                choose_quality,
+                choose_combined_audio_quality,
+            ) = self._patch_plan_inputs(
                 stack,
                 outputs=app.DownloadOutputs(False, "none", True),
                 decision="start",
@@ -654,6 +818,7 @@ class MainFlowTests(unittest.TestCase):
                 self.assertEqual(app.main(), 0)
 
         choose_quality.assert_called_once_with()
+        choose_combined_audio_quality.assert_not_called()
         self.assertEqual(len(commands), 1)
         self.assertIn(
             ".video-only-",
@@ -741,7 +906,10 @@ class MainFlowTests(unittest.TestCase):
             stack.enter_context(
                 mock.patch.object(app, "OUTPUT_DIR", output_path)
             )
-            choose_quality = self._patch_plan_inputs(
+            (
+                choose_quality,
+                choose_combined_audio_quality,
+            ) = self._patch_plan_inputs(
                 stack,
                 outputs=app.DownloadOutputs(False, "none", False),
                 decision="start",
@@ -765,6 +933,7 @@ class MainFlowTests(unittest.TestCase):
             self.assertEqual(app.main(), 1)
 
         choose_quality.assert_not_called()
+        choose_combined_audio_quality.assert_not_called()
         run_process.assert_not_called()
         combined_builder.assert_not_called()
         audio_builder.assert_not_called()

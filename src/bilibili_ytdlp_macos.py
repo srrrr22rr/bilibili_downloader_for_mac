@@ -89,23 +89,55 @@ BROWSER_SPECS = (
 QUALITY_CHOICES = {
     "1": {
         "label": "最高可用画质（推荐）",
-        "format": "bv*+ba/b",
+        "video_format": "bv",
+        "fallback_format": "b",
     },
     "2": {
         "label": "最高不超过 4K",
-        "format": "bv*[height<=2160]+ba/b[height<=2160]",
+        "video_format": "bv[height<=2160]",
+        "fallback_format": "b[height<=2160]",
     },
     "3": {
         "label": "最高不超过 1080P",
-        "format": "bv*[height<=1080]+ba/b[height<=1080]",
+        "video_format": "bv[height<=1080]",
+        "fallback_format": "b[height<=1080]",
     },
     "4": {
         "label": "最高不超过 720P",
-        "format": "bv*[height<=720]+ba/b[height<=720]",
+        "video_format": "bv[height<=720]",
+        "fallback_format": "b[height<=720]",
     },
     "5": {
         "label": "最高不超过 480P",
-        "format": "bv*[height<=480]+ba/b[height<=480]",
+        "video_format": "bv[height<=480]",
+        "fallback_format": "b[height<=480]",
+    },
+}
+
+COMBINED_AUDIO_QUALITY_CHOICES = {
+    "1": {
+        "label": "最高可用音质（推荐）",
+        "format_ids": None,
+    },
+    "2": {
+        "label": "AAC 最高不超过平台 192K 档（可回退 132K/64K）",
+        "format_ids": ("30280", "30232", "30216"),
+    },
+    "3": {
+        "label": "AAC 最高不超过平台 132K 档（可回退 64K）",
+        "format_ids": ("30232", "30216"),
+    },
+    "4": {
+        "label": "AAC 平台 64K 档",
+        "format_ids": ("30216",),
+    },
+    "5": {
+        "label": "杜比音频（严格；视频和账号必须实际提供）",
+        "format_ids": ("30250",),
+    },
+    "6": {
+        "label": "Hi-Res 无损 FLAC（严格；视频和账号必须实际提供）",
+        "format_ids": ("30251",),
     },
 }
 
@@ -215,10 +247,11 @@ def build_list_formats_command(
     url: str,
     browser_id: Optional[str],
     ffmpeg_path: str,
+    playlist_args: Sequence[str] = ("--no-playlist",),
 ) -> list[str]:
     return build_common_command(browser_id, ffmpeg_path) + [
         "--list-formats",
-        "--no-playlist",
+        *playlist_args,
         "--",
         url,
     ]
@@ -228,15 +261,19 @@ def build_download_command(
     url: str,
     browser_id: Optional[str],
     quality_key: str,
+    audio_quality_key: str,
     playlist_args: Sequence[str],
     ffmpeg_path: str,
 ) -> list[str]:
-    quality = QUALITY_CHOICES[quality_key]
+    format_selector = build_combined_format_selector(
+        quality_key,
+        audio_quality_key,
+    )
     return build_common_command(browser_id, ffmpeg_path) + [
         "--continue",
         "--part",
         "--format",
-        quality["format"],
+        format_selector,
         "--merge-output-format",
         "mp4/mkv",
         "--concurrent-fragments",
@@ -244,7 +281,7 @@ def build_download_command(
         "--paths",
         str(OUTPUT_DIR),
         "--output",
-        "%(title).180B [%(id)s].%(ext)s",
+        "%(title).150B [%(id)s].video-f%(format_id)s.%(ext)s",
         "--no-write-info-json",
         "--no-write-comments",
         "--no-mark-watched",
@@ -252,6 +289,40 @@ def build_download_command(
         "--",
         url,
     ]
+
+
+def build_combined_format_selector(
+    quality_key: str,
+    audio_quality_key: str,
+) -> str:
+    """Combine one video ceiling with the selected embedded audio tier.
+
+    Standard AAC tiers fall back only to the explicitly documented lower
+    tiers. Dolby and Hi-Res choices are strict so an unavailable special
+    track never turns into ordinary AAC without telling the user.
+    """
+    try:
+        quality = QUALITY_CHOICES[quality_key]
+    except KeyError as exc:
+        raise ValueError("unknown quality key: {}".format(quality_key)) from exc
+    try:
+        audio_quality = COMBINED_AUDIO_QUALITY_CHOICES[audio_quality_key]
+    except KeyError as exc:
+        raise ValueError(
+            "unknown combined audio quality key: {}".format(audio_quality_key)
+        ) from exc
+
+    video_format = str(quality["video_format"])
+    format_ids = audio_quality["format_ids"]
+    if format_ids is None:
+        return "{}+ba/{}".format(
+            video_format,
+            quality["fallback_format"],
+        )
+    return "/".join(
+        "{}+{}".format(video_format, format_id)
+        for format_id in format_ids
+    )
 
 
 def build_video_only_track_command(
@@ -505,17 +576,36 @@ def prompt_video_url() -> str:
             print("[输入错误] {}".format(exc))
 
 
-def choose_quality() -> str:
-    print("\n画质选择：")
+def choose_quality(*, prompt=input, write=print) -> str:
+    write("\n视频画质选择：")
     for key, quality in QUALITY_CHOICES.items():
-        print("  {}. {}".format(key, quality["label"]))
-    print("  6. 查看当前登录状态可用的全部格式")
+        write("  {}. {}".format(key, quality["label"]))
+    write("  6. 查看当前登录状态可用的全部格式")
 
     while True:
-        choice = input("请选择：").strip()
+        choice = prompt("请选择：").strip()
         if choice in QUALITY_CHOICES or choice == "6":
             return choice
-        print("请输入菜单中的数字。")
+        write("请输入菜单中的数字。")
+
+
+def choose_combined_audio_quality(*, prompt=input, write=print) -> str:
+    write("\n完整视频音质选择（这是视频内的声音）：")
+    for key, quality in COMBINED_AUDIO_QUALITY_CHOICES.items():
+        write("  {}. {}".format(key, quality["label"]))
+    write("  7. 查看当前登录状态可用的全部格式")
+    write(
+        "  说明：平台码率档位是约值，实际码率以格式列表为准；"
+        "此选择不会改变独立 MP3/FLAC 文件。"
+    )
+
+    while True:
+        choice = prompt("请选择：").strip()
+        if choice == "":
+            return "1"
+        if choice in COMBINED_AUDIO_QUALITY_CHOICES or choice == "7":
+            return choice
+        write("请输入 1 至 7，或直接回车选择最高可用音质。")
 
 
 def prompt_yes_no(
@@ -623,6 +713,7 @@ def confirm_download_plan(
     selection: PartSelection,
     browser_label: str,
     quality_key: Optional[str],
+    combined_audio_quality_key: Optional[str],
     outputs: DownloadOutputs,
     *,
     prompt=input,
@@ -635,6 +726,13 @@ def confirm_download_plan(
     needs_video_quality = outputs.combined_video or outputs.video_only
     if needs_video_quality and quality_key not in QUALITY_CHOICES:
         raise ValueError("video output requires a quality choice")
+    if (
+        outputs.combined_video
+        and combined_audio_quality_key not in COMBINED_AUDIO_QUALITY_CHOICES
+    ):
+        raise ValueError("combined video requires an audio quality choice")
+    if not outputs.combined_video and combined_audio_quality_key is not None:
+        raise ValueError("audio quality choice requires combined video output")
 
     write("\n" + "=" * 58)
     write("请确认下载计划")
@@ -652,6 +750,13 @@ def confirm_download_plan(
             QUALITY_CHOICES[quality_key]["label"]
             if needs_video_quality
             else "不适用（仅下载音频）"
+        )
+    )
+    write(
+        "  完整视频音质：{}".format(
+            COMBINED_AUDIO_QUALITY_CHOICES[combined_audio_quality_key]["label"]
+            if outputs.combined_video
+            else "不适用（未选择完整视频）"
         )
     )
     write(
@@ -839,6 +944,50 @@ def ensure_runtime() -> str:
     return configure_ffmpeg()
 
 
+def show_available_formats(
+    selection: PartSelection,
+    browser_id: Optional[str],
+    ffmpeg_path: str,
+    menu_label: str,
+) -> None:
+    if (
+        len(selection.catalog.parts) > 1
+        and selection.mode != "current"
+    ):
+        preview_index = selection.indices[0]
+        preview_label = (
+            "第{}集".format(preview_index)
+            if selection.catalog.kind_label == "分集"
+            else "P{}".format(preview_index)
+        )
+        playlist_args = [
+            "--yes-playlist",
+            "--playlist-items",
+            str(preview_index),
+        ]
+        print(
+            "\n正在读取首个已选项（{}）可用的视频与音频格式……".format(
+                preview_label
+            )
+        )
+        print("[提示] 不同分P/分集实际提供的格式可能不同。\n")
+    else:
+        playlist_args = ["--no-playlist"]
+        print("\n正在读取当前所选视频可用的视频与音频格式……\n")
+    result = subprocess.run(
+        build_list_formats_command(
+            selection.url,
+            browser_id,
+            ffmpeg_path,
+            playlist_args,
+        ),
+        check=False,
+    )
+    if result.returncode != 0:
+        show_failure_hint(browser_id)
+    input("\n查看完成，按回车返回{}菜单：".format(menu_label))
+
+
 def run_self_test() -> int:
     """Print a non-network runtime report for release-package verification."""
     ffmpeg_path = ensure_runtime()
@@ -905,27 +1054,37 @@ def main() -> int:
 
                 outputs = choose_output_plan()
                 quality_key = None
+                combined_audio_quality_key = None
                 if outputs.combined_video or outputs.video_only:
                     quality_key = choose_quality()
                     while quality_key == "6":
-                        print("\n正在读取当前账号可用画质……\n")
-                        result = subprocess.run(
-                            build_list_formats_command(
-                                catalog.current_url,
-                                browser_id,
-                                ffmpeg_path,
-                            ),
-                            check=False,
+                        show_available_formats(
+                            selection,
+                            browser_id,
+                            ffmpeg_path,
+                            "视频画质",
                         )
-                        if result.returncode != 0:
-                            show_failure_hint(browser_id)
-                        input("\n查看完成，按回车返回画质菜单：")
                         quality_key = choose_quality()
+                if outputs.combined_video:
+                    combined_audio_quality_key = (
+                        choose_combined_audio_quality()
+                    )
+                    while combined_audio_quality_key == "7":
+                        show_available_formats(
+                            selection,
+                            browser_id,
+                            ffmpeg_path,
+                            "完整视频音质",
+                        )
+                        combined_audio_quality_key = (
+                            choose_combined_audio_quality()
+                        )
 
                 decision = confirm_download_plan(
                     selection,
                     str(browser["app"]) if browser else "匿名",
                     quality_key,
+                    combined_audio_quality_key,
                     outputs,
                 )
                 if decision == "redo":
@@ -963,6 +1122,7 @@ def main() -> int:
         if outputs.combined_video:
             task_index += 1
             assert quality_key is not None
+            assert combined_audio_quality_key is not None
             print("\n[{}/{}] 正在处理：完整视频\n".format(
                 task_index,
                 task_total,
@@ -972,6 +1132,7 @@ def main() -> int:
                     selection.url,
                     browser_id,
                     quality_key,
+                    combined_audio_quality_key,
                     selected_playlist_args,
                     ffmpeg_path,
                 )
