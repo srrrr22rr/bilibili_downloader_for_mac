@@ -34,7 +34,14 @@ AUDIO_SOURCE_OUTPUT = (
 AUDIO_MANIFEST_TEMPLATE = (
     'after_move:{"filepath":%(filepath)j,"acodec":%(acodec)j,'
     '"id":%(id)j,"title":%(title)j,'
-    '"playlist_index":%(playlist_index)j}'
+    '"playlist_index":%(playlist_index|null)j}'
+)
+
+# yt-dlp 2026.07.04 wrote a bare ``NA`` for the missing playlist index of a
+# single video.  Those v1.1/v1.2 cache entries are otherwise complete, so keep
+# a deliberately narrow compatibility rule instead of discarding the source.
+LEGACY_MISSING_PLAYLIST_INDEX = re.compile(
+    r'("playlist_index"\s*:\s*)NA(\s*})\s*$'
 )
 
 
@@ -505,7 +512,11 @@ def read_audio_manifest(manifest_path: Path) -> list[AudioSource]:
     seen = set()
     for line in manifest_path.read_text(encoding="utf-8").splitlines():
         try:
-            item = json.loads(line)
+            normalized_line = LEGACY_MISSING_PLAYLIST_INDEX.sub(
+                r"\1null\2",
+                line,
+            )
+            item = json.loads(normalized_line)
             path = Path(item["filepath"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             continue

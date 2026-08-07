@@ -59,16 +59,16 @@ ps：登录不能绕过会员限制。
 |---|---|
 | 处理器 | Apple Silicon arm64；不支持 Intel Mac，后续芯片以实际兼容性为准 |
 | 最低系统 | macOS 14 Sonoma |
-| App | b站downloader 1.2.0 |
+| App | b站downloader 1.2.1 |
 | Python 运行时 | 3.9.6 arm64 |
 | yt-dlp | 2026.07.04 官方 macOS standalone binary |
 | FFmpeg | 7.1 arm64，由 imageio-ffmpeg 0.6.0 提供 |
-| 发布状态 | v1.2.0 新增完整视频音质选择；v1.1.0 为输出模式与安装指引更新；ad-hoc 签名，尚未 Apple 公证 |
+| 发布状态 | v1.2.1 修复单视频独立音频清单；v1.2.0 新增完整视频音质选择；ad-hoc 签名，尚未 Apple 公证 |
 
 当前 ZIP：
 
 ```text
-bilibili-downloader-1.2.0-macos-arm64.zip
+bilibili-downloader-1.2.1-macos-arm64.zip
 ```
 
 下载页同时提供同名 `.sha256` 文件，GitHub 也会显示 Release asset digest。
@@ -78,7 +78,7 @@ bilibili-downloader-1.2.0-macos-arm64.zip
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c bilibili-downloader-1.2.0-macos-arm64.zip.sha256
+shasum -a 256 -c bilibili-downloader-1.2.1-macos-arm64.zip.sha256
 ```
 
 ### 3. 运行架构
@@ -237,6 +237,10 @@ MP4 时允许输出 MKV。
 MP3 的 `-ac 2` 会把多声道源下混为立体声。独立音频会单独下载并处理源音轨，
 不是简单从完整视频中无损拆出。同时选择多类输出会增加网络流量、磁盘占用
 和处理时间。
+
+单视频或“只选当前分P/分集”没有播放列表序号时，音频源清单会写入标准 JSON
+`null`。v1.2.1 也会兼容读取旧版缓存中 yt-dlp 写出的裸 `NA`，因此已经完整
+下载的安全缓存源可以继续转换，不必重新下载。
 
 ### 9. 暂停、继续与退出
 
@@ -398,8 +402,8 @@ PYTHONPATH=src .venv-build/bin/python -m unittest discover -s tests -v
 
 ```text
 dist/b站downloader.app
-dist/bilibili-downloader-1.2.0-macos-arm64.zip
-dist/bilibili-downloader-1.2.0-macos-arm64.zip.sha256
+dist/bilibili-downloader-1.2.1-macos-arm64.zip
+dist/bilibili-downloader-1.2.1-macos-arm64.zip.sha256
 ```
 
 构建脚本会：
@@ -416,8 +420,8 @@ dist/bilibili-downloader-1.2.0-macos-arm64.zip.sha256
 
 | 变量 | 用途 |
 |---|---|
-| `VERSION` | App/ZIP 版本，默认 `1.2.0` |
-| `BUILD_NUMBER` | `CFBundleVersion`，默认 `12000` |
+| `VERSION` | App/ZIP 版本，默认 `1.2.1` |
+| `BUILD_NUMBER` | `CFBundleVersion`，默认 `12001` |
 | `BOOTSTRAP_PYTHON` | 构建虚拟环境所用 Python |
 | `CODESIGN_IDENTITY` | 外层 bundle 签名身份；默认 `-`（ad-hoc） |
 
@@ -436,7 +440,7 @@ dist/bilibili-downloader-1.2.0-macos-arm64.zip.sha256
 
 ### 15. 测试覆盖
 
-当前自动化测试共 59 项，覆盖：
+当前自动化测试共 61 项，覆盖：
 
 - AV/BV/官方 URL、短链和带标题分享文字；
 - 非官方域名、凭据 URL 和命令参数拒绝；
@@ -446,7 +450,7 @@ dist/bilibili-downloader-1.2.0-macos-arm64.zip.sha256
 - 完整视频音质菜单、AAC 回退顺序、严格杜比/Hi-Res、格式列表返回与选中项预览；
 - 纯音频与无声音视频跳过完整视频音质、画质上限与无声音视频格式；
 - MP3 源优先级和严格 FLAC 无回退；
-- 音频缓存路径、清单、原子转换与越界保护；
+- 音频缓存路径、标准 `null`/旧版裸 `NA` 清单兼容、原子转换与越界保护；
 - 暂停、恢复、退出以及顽固子进程升级终止；
 - 冻结 App 只使用 bundle 内 FFmpeg。
 
@@ -513,7 +517,7 @@ macOS Release 混用。
 请只下载自己创作、获得授权、允许离线保存或法律明确允许的内容，并遵守平台
 条款、版权规则与当地法律。项目不对未经授权的下载、传播或商业使用负责。
 
-[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.2.0
+[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.2.1
 [apple-open]: https://support.apple.com/guide/mac-help/mh40616/mac
 [developer-id]: https://developer.apple.com/developer-id/
 [notarization]: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
