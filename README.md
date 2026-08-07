@@ -23,10 +23,10 @@ Mac 芯片是 Apple M 系列（arm64），并且系统是 macOS 14 以上，就�
 
    ![再次确认仍要打开 b站 downloader](docs/images/macos-gatekeeper-03-confirm-open.png)
 4. App 会打开命令行（**就是那个黑色框框**）。按中文菜单选登录方式，粘贴 BV/AV、链接或整段分享
-   文字，再选分p、画质、音频和无音频视频（想下什么下什么咯下载过程中会让你选择）。
-6. 下载过程中让你输密码你就输入mac开机密码
-7. 下载结束会自动打开 `~/Downloads/b站downloader/`。
-8. **下载功能可以支持音频格式选择 视频画质选择 单独下载或导出视频和音频**
+   文字，再选分P、输出文件、视频画质和完整视频音质（想下什么就按提示选什么）。
+5. 下载过程中让你输密码你就输入mac开机密码
+6. 下载结束会自动打开 `~/Downloads/b站downloader/`。
+7. **支持视频画质和完整视频音质分别选择，也可单独下载或导出视频、音频。**
 
 ps：登录不能绕过会员限制。
 *绝对没后门没病毒_有的话我出门被车撞死*
@@ -48,7 +48,7 @@ ps：登录不能绕过会员限制。
 
 - 新的 Apple Silicon Mac 解压后即可运行，无 Homebrew 依赖。
 - 不要求用户复制 Cookie、SESSDATA 或密码。
-- 下载前明确显示登录来源、分P、画质和全部输出文件计划。
+- 下载前明确显示登录来源、分P、视频画质、完整视频音质和全部输出文件计划。
 - 严格区分有损 MP3 与平台实际返回的 FLAC，拒绝“假无损”。
 - App bundle 保持只读，下载和缓存都写入用户目录。
 - 构建、依赖版本、许可证和发布验证可审计。
@@ -59,16 +59,16 @@ ps：登录不能绕过会员限制。
 |---|---|
 | 处理器 | Apple Silicon arm64；不支持 Intel Mac，后续芯片以实际兼容性为准 |
 | 最低系统 | macOS 14 Sonoma |
-| App | b站downloader 1.1.0 |
+| App | b站downloader 1.2.0 |
 | Python 运行时 | 3.9.6 arm64 |
 | yt-dlp | 2026.07.04 官方 macOS standalone binary |
 | FFmpeg | 7.1 arm64，由 imageio-ffmpeg 0.6.0 提供 |
-| 发布状态 | v1.1.0 输出模式与安装指引更新；v1.0.1 为番剧兼容性修复；v1.0.0 为首个公开发布版；ad-hoc 签名，尚未 Apple 公证 |
+| 发布状态 | v1.2.0 新增完整视频音质选择；v1.1.0 为输出模式与安装指引更新；ad-hoc 签名，尚未 Apple 公证 |
 
 当前 ZIP：
 
 ```text
-bilibili-downloader-1.1.0-macos-arm64.zip
+bilibili-downloader-1.2.0-macos-arm64.zip
 ```
 
 下载页同时提供同名 `.sha256` 文件，GitHub 也会显示 Release asset digest。
@@ -78,7 +78,7 @@ bilibili-downloader-1.1.0-macos-arm64.zip
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c bilibili-downloader-1.1.0-macos-arm64.zip.sha256
+shasum -a 256 -c bilibili-downloader-1.2.0-macos-arm64.zip.sha256
 ```
 
 ### 3. 运行架构
@@ -103,8 +103,11 @@ Homebrew 路径作为开发回退。
 - 可选择匿名、Google Chrome 或 Safari 登录状态。
 - 多P/分集支持当前项、全部、`1,3-5` 自定义范围、完整列表和返回链接输入。
 - 画质支持最高可用、最高 4K、1080P、720P、480P，并可列出实际格式。
+- 完整视频音质支持自动最高、AAC 平台 192K/132K/64K 档、严格杜比和严格
+  Hi-Res FLAC，并可列出账号实际可用格式。
 - 完整视频、无画面音频和无声音视频可独立选择并自由组合，至少选择一种。
-- 独立音频可选 MP3 V0 或严格 FLAC；纯音频计划不再要求选择视频画质。
+- 独立音频仍单独选择 MP3 V0 或严格 FLAC；纯音频计划不询问视频画质或
+  完整视频音质。
 - 下载前显示完整摘要，可开始、重新选择或取消。
 - 下载及 FFmpeg 阶段均支持暂停、恢复和确认退出。
 - 成功后自动打开输出目录。
@@ -167,23 +170,41 @@ medialist、直播或任意站内播放列表。
 自定义范围会去重、排序并检查上下界，同一选择会同时应用于完整视频、无画面音频
 和无声音视频。
 
-### 7. 画质策略
+### 7. 视频画质与完整视频音质
 
 | 菜单 | yt-dlp 选择策略 |
 |---|---|
-| 最高可用 | 优先最佳视频流 + 最佳音频流，必要时回退单文件 |
+| 最高可用 | 优先最佳视频流；自动音质时必要时可回退单文件 |
 | 最高 4K | 将高度限制为 2160 |
 | 最高 1080P | 将高度限制为 1080 |
 | 最高 720P | 将高度限制为 720 |
 | 最高 480P | 将高度限制为 480 |
 | 查看格式 | 列出当前登录状态实际能取得的格式 |
 
-菜单表达的是“上限”，最终格式仍由视频源、账号权限和平台响应决定。会员、4K、
-HDR、杜比等不会因为选择菜单就自动获得。若只选择无画面音频，程序会跳过画质
-菜单；只要选择了完整视频或无声音视频，就仍需选择画质。
+视频画质菜单表达的是“上限”，最终格式仍由视频源、账号权限和平台响应决定。
+会员、4K、HDR 等不会因为选择菜单就自动获得。只要选择了完整视频或无声音视频，
+程序就会询问视频画质；纯独立音频计划会跳过该菜单。
 
-完整视频默认请求独立视频流与音频流并由 FFmpeg 合并，优先输出 MP4；源编码
-组合不兼容 MP4 时允许输出 MKV。
+选择完整视频后，还会单独询问视频内音轨的音质：
+
+| 菜单 | yt-dlp 选择策略 |
+|---|---|
+| 最高可用（默认） | 使用当前账号和视频源的最佳可用音轨 |
+| AAC 平台 192K 档 | 优先 `30280`，不可用时依次回退 `30232`、`30216` |
+| AAC 平台 132K 档 | 优先 `30232`，不可用时回退 `30216` |
+| AAC 平台 64K 档 | 严格选择 `30216` |
+| 杜比音频 | 严格选择 `30250`，不可用时明确失败，不替换为 AAC |
+| Hi-Res 无损 FLAC | 严格选择 `30251`，不可用时明确失败，不制造“假无损” |
+| 查看格式 | 列出当前登录状态实际能取得的视频与音频格式 |
+
+平台档位名称是约值，同一档的实际码率可能因视频变化，以“查看格式”的结果为准。
+AAC 高档只向下回退到菜单写明的档位；杜比和 Hi-Res 不静默降级。选择特殊音轨
+不代表绕过会员、地区、版权或视频源限制。多P/分集计划查看格式时会预览首个
+实际选中项，并提示其他项可能不同。仅选择无声音视频时不会询问音质。
+
+完整视频会优先按两项选择分别请求独立视频流和音频流，再由 FFmpeg 合并；默认
+最高音质在没有独立流时可回退单文件。合并时优先输出 MP4，源编码组合不兼容
+MP4 时允许输出 MKV。
 
 ### 8. 输出文件选择
 
@@ -192,8 +213,8 @@ HDR、杜比等不会因为选择菜单就自动获得。若只选择无画面�
 
 | 输出 | 是否可关闭 | 源选择与处理 |
 |---|---|---|
-| 完整视频（有画面、有声音） | 可以；默认开启 | 按所选画质取得视频与音频并自动合并，优先输出 MP4 |
-| 无画面音频（只有声音） | 可以；默认关闭 | 可选 MP3 V0 或严格 FLAC；纯音频计划不询问视频画质 |
+| 完整视频（有画面、有声音） | 可以；默认开启 | 分别按所选视频画质和完整视频音质取得流并自动合并，优先输出 MP4 |
+| 无画面音频（只有声音） | 可以；默认关闭 | 可选 MP3 V0 或严格 FLAC；不会复用完整视频音质设置 |
 | 无声音视频（只有画面） | 可以；默认关闭 | 按所选画质下载最佳纯视频流，不包含音轨 |
 
 无画面音频的处理方式：
@@ -261,12 +282,15 @@ yt-dlp 和 FFmpeg 都在独立 POSIX 进程组中运行。暂停只适用于当�
 常见文件名：
 
 ```text
-视频标题 [BV号].mp4
-视频标题 [BV号].mkv
+视频标题 [BV号].video-f视频格式号+音频格式号.mp4
+视频标题 [BV号].video-f视频格式号+音频格式号.mkv
 视频标题 [BV号].audio-MP3-V0-source-aac.mp3
 视频标题 [BV号].audio-FLAC-original.flac
 视频标题 [BV号].video-only-f格式号.mp4
 ```
+
+完整视频文件名保留实际格式组合 ID，因此同一视频改选画质或音质时不会误用旧
+文件；使用完全相同选项重试时仍可识别已完成文件并续传对应 `.part`。
 
 ### 11. 安全模型
 
@@ -296,7 +320,7 @@ yt-dlp 和 FFmpeg 都在独立 POSIX 进程组中运行。暂停只适用于当�
 | Safari 报权限错误 | 给 Terminal 完全磁盘访问，完全退出后重新打开 |
 | FLAC 被跳过 | 视频或账号没有返回原生 FLAC；这是严格模式的预期结果 |
 | 合并或转换失败 | 重新下载完整 ZIP，不要替换 App 内 FFmpeg |
-| 下载中断 | 使用相同链接、分P和画质重试，yt-dlp 会利用 `.part` 续传 |
+| 下载中断 | 使用相同链接、分P、画质和完整视频音质重试，yt-dlp 会利用 `.part` 续传 |
 | 磁盘不足 | 清理下载目录；确认没有任务运行后再检查用户缓存 |
 | Terminal 窗口卡在暂停提示 | 直接回车继续，或输入 `Y` 安全退出；不要直接关窗口 |
 | macOS 阻止首次打开 | 确认文件来自本仓库 Release，然后按第一部分第 3 步操作；不要全局移除隔离属性 |
@@ -374,8 +398,8 @@ PYTHONPATH=src .venv-build/bin/python -m unittest discover -s tests -v
 
 ```text
 dist/b站downloader.app
-dist/bilibili-downloader-1.1.0-macos-arm64.zip
-dist/bilibili-downloader-1.1.0-macos-arm64.zip.sha256
+dist/bilibili-downloader-1.2.0-macos-arm64.zip
+dist/bilibili-downloader-1.2.0-macos-arm64.zip.sha256
 ```
 
 构建脚本会：
@@ -392,8 +416,8 @@ dist/bilibili-downloader-1.1.0-macos-arm64.zip.sha256
 
 | 变量 | 用途 |
 |---|---|
-| `VERSION` | App/ZIP 版本，默认 `1.1.0` |
-| `BUILD_NUMBER` | `CFBundleVersion`，默认 `11000` |
+| `VERSION` | App/ZIP 版本，默认 `1.2.0` |
+| `BUILD_NUMBER` | `CFBundleVersion`，默认 `12000` |
 | `BOOTSTRAP_PYTHON` | 构建虚拟环境所用 Python |
 | `CODESIGN_IDENTITY` | 外层 bundle 签名身份；默认 `-`（ad-hoc） |
 
@@ -412,14 +436,15 @@ dist/bilibili-downloader-1.1.0-macos-arm64.zip.sha256
 
 ### 15. 测试覆盖
 
-当前自动化测试共 51 项，覆盖：
+当前自动化测试共 59 项，覆盖：
 
 - AV/BV/官方 URL、短链和带标题分享文字；
 - 非官方域名、凭据 URL 和命令参数拒绝；
 - 匿名与浏览器登录态命令；
 - 当前/全部/自定义/全不选分P；
 - 完整视频、无画面音频、无声音视频的独立选择、自由组合与空计划阻止；
-- 纯音频跳过画质、画质上限与无声音视频格式；
+- 完整视频音质菜单、AAC 回退顺序、严格杜比/Hi-Res、格式列表返回与选中项预览；
+- 纯音频与无声音视频跳过完整视频音质、画质上限与无声音视频格式；
 - MP3 源优先级和严格 FLAC 无回退；
 - 音频缓存路径、清单、原子转换与越界保护；
 - 暂停、恢复、退出以及顽固子进程升级终止；
@@ -440,7 +465,7 @@ dist/bilibili-downloader-1.1.0-macos-arm64.zip.sha256
 
 - Finder 真实双击、互联网 quarantine 属性和 Gatekeeper 弹窗；
 - Developer ID、`spctl` 信任、公证与票据验证；
-- 真实 Bilibili 网络下载、会员画质、FLAC 可用性和地区/版权响应；
+- 真实 Bilibili 媒体下载、会员画质、杜比/Hi-Res 可用性和地区/版权响应；
 - Chrome/Safari 的真实 Cookie、TCC、钥匙串和非默认 Profile；
 - 全新实体 Mac 及所有后续 Apple Silicon 型号。
 
@@ -479,7 +504,7 @@ FFmpeg 二进制报告启用了 GPL 组件，包括 libmp3lame、libx264 和 lib
 ### 18. 上游来源与本仓库改动
 
 项目最初来源于 [Henryhaohao/Bilibili_video_download][upstream]。本仓库增加并
-维护 Apple Silicon Terminal 前端、浏览器登录态、分P/画质选择、严格音频
+维护 Apple Silicon Terminal 前端、浏览器登录态、分P/画质/完整视频音质选择、严格音频
 语义、进程组暂停、macOS App 打包、测试和发布文档。上游旧版用法不应与当前
 macOS Release 混用。
 
@@ -488,7 +513,7 @@ macOS Release 混用。
 请只下载自己创作、获得授权、允许离线保存或法律明确允许的内容，并遵守平台
 条款、版权规则与当地法律。项目不对未经授权的下载、传播或商业使用负责。
 
-[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.1.0
+[release]: https://github.com/srrrr22rr/bilibili_downloader_for_mac/releases/tag/v1.2.0
 [apple-open]: https://support.apple.com/guide/mac-help/mh40616/mac
 [developer-id]: https://developer.apple.com/developer-id/
 [notarization]: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
