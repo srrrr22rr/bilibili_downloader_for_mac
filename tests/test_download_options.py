@@ -240,6 +240,61 @@ class AudioTests(unittest.TestCase):
         self.assertNotIn("/", selector)
         self.assertNotIn("--extract-audio", command)
 
+    def test_manifest_template_writes_json_null_for_single_video(self):
+        command = options.build_audio_source_command(
+            ["yt-dlp"],
+            "https://www.bilibili.com/video/BV1xW411E739",
+            "mp3",
+            ["--no-playlist"],
+            Path("/tmp/cache"),
+            Path("/tmp/cache/manifest.jsonl"),
+        )
+        template = command[command.index("--print-to-file") + 1]
+        self.assertIn("%(playlist_index|null)j", template)
+        self.assertNotIn("%(playlist_index)j", template)
+
+    def test_manifest_reads_null_legacy_na_and_numeric_indices(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            payloads = []
+            for name, video_id, playlist_index in (
+                ("null.m4a", "BV_NULL", None),
+                ("legacy.m4a", "BV_LEGACY", "legacy-na"),
+                ("numeric.m4a", "BV_NUMERIC", 3),
+            ):
+                source_path = root / name
+                source_path.write_bytes(b"source")
+                payload = {
+                    "filepath": str(source_path),
+                    "acodec": "flac",
+                    "id": video_id,
+                    "title": video_id,
+                    "playlist_index": playlist_index,
+                }
+                if playlist_index == "legacy-na":
+                    payload.pop("playlist_index")
+                    line = (
+                        json.dumps(payload, ensure_ascii=False)[:-1]
+                        + ', "playlist_index":NA}'
+                    )
+                else:
+                    line = json.dumps(payload, ensure_ascii=False)
+                payloads.append(line)
+
+            manifest = root / "manifest.jsonl"
+            manifest.write_text("\n".join(payloads) + "\n", encoding="utf-8")
+
+            sources = options.read_audio_manifest(manifest)
+
+        self.assertEqual(
+            [source.video_id for source in sources],
+            ["BV_NULL", "BV_LEGACY", "BV_NUMERIC"],
+        )
+        self.assertEqual(
+            [source.playlist_index for source in sources],
+            [None, None, 3],
+        )
+
     def test_manifest_and_conversion_commands(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
